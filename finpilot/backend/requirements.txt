@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+httpx
+pydantic-settings
+mcp==2.3.0

@@ -1,0 +1,43 @@
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Clon local de Apache Fineract (infraestructura de desarrollo; no versionar)
+/fineract/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Bases de datos locales
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Pruebas y herramientas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.cache/
+
+# Editores y sistema operativo
+.idea/
+.vscode/
+*.swp
+.DS_Store

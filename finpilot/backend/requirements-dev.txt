@@ -1,0 +1,4 @@
+# Dependencias de desarrollo y pruebas (no necesarias en runtime).
+pytest
+pytest-asyncio
+respx
