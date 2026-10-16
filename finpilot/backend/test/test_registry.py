@@ -37,7 +37,22 @@ def make_client() -> FineractClient:
 
 
 def test_allowlist_contains_only_read_tools() -> None:
-    assert tool_names() == frozenset({"search_clients", "get_client"})
+    assert tool_names() == frozenset(
+        {
+            "search_clients",
+            "get_client",
+            "get_client_accounts",
+            "get_savings_account",
+            "get_loan",
+            "list_savings_accounts",
+            "list_loans",
+            "list_client_transactions",
+            "search_savings_transactions",
+            "list_loan_transactions",
+            "get_savings_transaction",
+            "get_loan_transaction",
+        }
+    )
 
 
 @pytest.mark.parametrize("name", ["create_client", "transfer_funds", "delete_client", "", "SEARCH_CLIENTS"])
@@ -83,6 +98,14 @@ async def test_get_client_dispatches_validated_args(monkeypatch: pytest.MonkeyPa
         ("get_client", {}),
         ("get_client", {"clientId": 0}),
         ("get_client", {"clientId": 1, "extra": True}),
+        ("get_savings_transaction", {}),
+        ("get_savings_transaction", {"savingsId": 1}),
+        ("get_savings_transaction", {"savingsId": 1, "transactionId": 0}),
+        ("get_loan_transaction", {"loanId": 1, "transactionId": 1, "extra": True}),
+        ("list_savings_accounts", {"limit": 101}),
+        ("list_savings_accounts", {"clientId": 1}),
+        ("list_loans", {"clientId": 0}),
+        ("list_loans", {"offset": -1}),
     ],
 )
 async def test_invalid_arguments_are_rejected(name: str, raw: dict[str, Any]) -> None:

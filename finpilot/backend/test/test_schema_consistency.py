@@ -16,13 +16,36 @@ import pytest
 from pydantic import BaseModel
 
 from app.tools import registry
-from app.tools.schemas import GetClientArgs, SearchClientsArgs
+from app.tools.schemas import (
+    GetClientAccountsArgs,
+    GetClientArgs,
+    GetLoanArgs,
+    GetLoanTransactionArgs,
+    GetSavingsAccountArgs,
+    GetSavingsTransactionArgs,
+    ListClientTransactionsArgs,
+    ListLoansArgs,
+    ListLoanTransactionsArgs,
+    ListSavingsAccountsArgs,
+    SearchClientsArgs,
+    SearchSavingsTransactionsArgs,
+)
 
 HARNESS_PATH = Path(__file__).resolve().parents[1] / "scripts" / "eval_tool_calling.py"
 
 APP_ARG_MODELS: dict[str, type[BaseModel]] = {
     "search_clients": SearchClientsArgs,
     "get_client": GetClientArgs,
+    "get_client_accounts": GetClientAccountsArgs,
+    "get_savings_account": GetSavingsAccountArgs,
+    "get_loan": GetLoanArgs,
+    "list_savings_accounts": ListSavingsAccountsArgs,
+    "list_loans": ListLoansArgs,
+    "list_client_transactions": ListClientTransactionsArgs,
+    "search_savings_transactions": SearchSavingsTransactionsArgs,
+    "list_loan_transactions": ListLoanTransactionsArgs,
+    "get_savings_transaction": GetSavingsTransactionArgs,
+    "get_loan_transaction": GetLoanTransactionArgs,
 }
 
 

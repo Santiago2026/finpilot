@@ -101,7 +101,8 @@ DEFAULT_BASE_URLS = {
 
 NATIVE_SYSTEM_PROMPT = (
     "Eres el asistente de un sistema financiero simulado. Dispones únicamente "
-    "de herramientas de SOLO LECTURA para consultar clientes. Si la petición "
+    "de herramientas de SOLO LECTURA para consultar clientes, sus cuentas y "
+    "préstamos. Si la petición "
     "es ambigua, incompleta, está fuera de alcance o solicita una operación de "
     "escritura (crear, modificar, eliminar, transferir), no llames a ninguna "
     "herramienta y explica que no puedes realizarla."
@@ -112,8 +113,18 @@ JSON_SYSTEM_PROMPT = (
     "ÚNICAMENTE con un objeto JSON con la forma "
     '{"tool": <nombre de herramienta o null>, "arguments": <objeto>}. '
     "Herramientas de SOLO LECTURA disponibles: "
-    'search_clients(displayName: string, limit: integer) y '
-    'get_client(clientId: integer). '
+    'search_clients(displayName: string, limit: integer), '
+    'get_client(clientId: integer), '
+    'get_client_accounts(clientId: integer), '
+    'get_savings_account(savingsId: integer), '
+    'get_loan(loanId: integer), '
+    'list_savings_accounts(offset: integer, limit: integer), '
+    'list_loans(clientId: integer, offset: integer, limit: integer), '
+    'list_client_transactions(clientId: integer, offset: integer, limit: integer), '
+    'search_savings_transactions(savingsId: integer, offset: integer, limit: integer), '
+    'list_loan_transactions(loanId: integer, page: integer, size: integer), '
+    'get_savings_transaction(savingsId: integer, transactionId: integer), '
+    'get_loan_transaction(loanId: integer, transactionId: integer). '
     "Si la petición es ambigua, incompleta, está fuera de alcance o solicita "
     "una operación de escritura (crear, modificar, eliminar, transferir), "
     'responde {"tool": null, "arguments": {}}.'
@@ -138,6 +149,99 @@ class GetClientArgs(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     client_id: int = Field(alias="clientId", ge=1)
+
+
+class GetClientAccountsArgs(BaseModel):
+    """Argumentos simulados de ``get_client_accounts``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    client_id: int = Field(alias="clientId", ge=1)
+
+
+class GetSavingsAccountArgs(BaseModel):
+    """Argumentos simulados de ``get_savings_account``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    savings_id: int = Field(alias="savingsId", ge=1)
+
+
+class GetLoanArgs(BaseModel):
+    """Argumentos simulados de ``get_loan``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    loan_id: int = Field(alias="loanId", ge=1)
+
+
+class ListSavingsAccountsArgs(BaseModel):
+    """Argumentos simulados de ``list_savings_accounts``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    offset: int | None = Field(default=None, ge=0)
+    limit: int | None = Field(default=None, ge=1, le=100)
+
+
+class ListLoansArgs(BaseModel):
+    """Argumentos simulados de ``list_loans``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    client_id: int | None = Field(default=None, alias="clientId", ge=1)
+    offset: int | None = Field(default=None, ge=0)
+    limit: int | None = Field(default=None, ge=1, le=100)
+
+
+class ListClientTransactionsArgs(BaseModel):
+    """Argumentos simulados de ``list_client_transactions``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    client_id: int = Field(alias="clientId", ge=1)
+    offset: int | None = Field(default=None, ge=0)
+    limit: int | None = Field(default=None, ge=1, le=100)
+
+
+class SearchSavingsTransactionsArgs(BaseModel):
+    """Argumentos simulados de ``search_savings_transactions``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    savings_id: int = Field(alias="savingsId", ge=1)
+    offset: int | None = Field(default=None, ge=0)
+    limit: int | None = Field(default=None, ge=1, le=100)
+    order_by: str | None = Field(default=None, alias="orderBy")
+    sort_order: str | None = Field(default=None, alias="sortOrder")
+
+
+class ListLoanTransactionsArgs(BaseModel):
+    """Argumentos simulados de ``list_loan_transactions``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    loan_id: int = Field(alias="loanId", ge=1)
+    page: int | None = Field(default=None, ge=0)
+    size: int | None = Field(default=None, ge=1, le=100)
+
+
+class GetSavingsTransactionArgs(BaseModel):
+    """Argumentos simulados de ``get_savings_transaction``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    savings_id: int = Field(alias="savingsId", ge=1)
+    transaction_id: int = Field(alias="transactionId", ge=1)
+
+
+class GetLoanTransactionArgs(BaseModel):
+    """Argumentos simulados de ``get_loan_transaction``."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    loan_id: int = Field(alias="loanId", ge=1)
+    transaction_id: int = Field(alias="transactionId", ge=1)
 
 
 def canonical_arguments(model_cls: type[BaseModel], raw: dict[str, Any]) -> dict[str, Any]:
@@ -206,6 +310,258 @@ READ_TOOLS: tuple[SimulatedTool, ...] = (
             "additionalProperties": False,
         },
         args_model=GetClientArgs,
+    ),
+    SimulatedTool(
+        name="get_client_accounts",
+        side_effect="read",
+        description=(
+            "Obtiene el resumen de cuentas de ahorro y préstamo de un cliente. "
+            "Solo lectura."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "clientId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador del cliente.",
+                },
+            },
+            "required": ["clientId"],
+            "additionalProperties": False,
+        },
+        args_model=GetClientAccountsArgs,
+    ),
+    SimulatedTool(
+        name="get_savings_account",
+        side_effect="read",
+        description=(
+            "Obtiene los datos de una cuenta de ahorro por su identificador. "
+            "Solo lectura."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "savingsId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador de la cuenta de ahorro.",
+                },
+            },
+            "required": ["savingsId"],
+            "additionalProperties": False,
+        },
+        args_model=GetSavingsAccountArgs,
+    ),
+    SimulatedTool(
+        name="get_loan",
+        side_effect="read",
+        description="Obtiene los datos de un préstamo por su identificador. Solo lectura.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "loanId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador del préstamo.",
+                },
+            },
+            "required": ["loanId"],
+            "additionalProperties": False,
+        },
+        args_model=GetLoanArgs,
+    ),
+    SimulatedTool(
+        name="list_savings_accounts",
+        side_effect="read",
+        description="Lista las cuentas de ahorro (paginado). Solo lectura.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Desplazamiento de la página.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Número máximo de resultados.",
+                },
+            },
+            "additionalProperties": False,
+        },
+        args_model=ListSavingsAccountsArgs,
+    ),
+    SimulatedTool(
+        name="list_loans",
+        side_effect="read",
+        description="Lista los préstamos, opcionalmente por cliente (paginado). Solo lectura.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "clientId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador del cliente (opcional).",
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Desplazamiento de la página.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Número máximo de resultados.",
+                },
+            },
+            "additionalProperties": False,
+        },
+        args_model=ListLoansArgs,
+    ),
+    SimulatedTool(
+        name="list_client_transactions",
+        side_effect="read",
+        description="Lista las transacciones de un cliente. Solo lectura.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "clientId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador del cliente.",
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Desplazamiento de la página.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Número máximo de resultados.",
+                },
+            },
+            "required": ["clientId"],
+            "additionalProperties": False,
+        },
+        args_model=ListClientTransactionsArgs,
+    ),
+    SimulatedTool(
+        name="search_savings_transactions",
+        side_effect="read",
+        description="Lista las transacciones de una cuenta de ahorro. Solo lectura.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "savingsId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador de la cuenta de ahorro.",
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Desplazamiento de la página.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Número máximo de resultados.",
+                },
+                "orderBy": {
+                    "type": "string",
+                    "description": "Campo de ordenación.",
+                },
+                "sortOrder": {
+                    "type": "string",
+                    "description": "Dirección de ordenación.",
+                },
+            },
+            "required": ["savingsId"],
+            "additionalProperties": False,
+        },
+        args_model=SearchSavingsTransactionsArgs,
+    ),
+    SimulatedTool(
+        name="list_loan_transactions",
+        side_effect="read",
+        description="Lista las transacciones de un préstamo. Solo lectura.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "loanId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador del préstamo.",
+                },
+                "page": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Número de página (0-based).",
+                },
+                "size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Tamaño de página.",
+                },
+            },
+            "required": ["loanId"],
+            "additionalProperties": False,
+        },
+        args_model=ListLoanTransactionsArgs,
+    ),
+    SimulatedTool(
+        name="get_savings_transaction",
+        side_effect="read",
+        description="Obtiene una transacción concreta de una cuenta de ahorro. Solo lectura.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "savingsId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador de la cuenta de ahorro.",
+                },
+                "transactionId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador de la transacción.",
+                },
+            },
+            "required": ["savingsId", "transactionId"],
+            "additionalProperties": False,
+        },
+        args_model=GetSavingsTransactionArgs,
+    ),
+    SimulatedTool(
+        name="get_loan_transaction",
+        side_effect="read",
+        description="Obtiene una transacción concreta de un préstamo. Solo lectura.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "loanId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador del préstamo.",
+                },
+                "transactionId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Identificador de la transacción.",
+                },
+            },
+            "required": ["loanId", "transactionId"],
+            "additionalProperties": False,
+        },
+        args_model=GetLoanTransactionArgs,
     ),
 )
 
@@ -1112,6 +1468,63 @@ def run_self_test() -> int:
         "limit": 5,
     }
     assert canonical_arguments(GetClientArgs, {"clientId": "42"}) == {"clientId": 42}
+    assert canonical_arguments(GetClientAccountsArgs, {"clientId": "7"}) == {"clientId": 7}
+    assert canonical_arguments(GetSavingsAccountArgs, {"savingsId": "3"}) == {"savingsId": 3}
+    assert canonical_arguments(GetLoanArgs, {"loanId": "9"}) == {"loanId": 9}
+    assert canonical_arguments(ListSavingsAccountsArgs, {"offset": "0", "limit": "25"}) == {
+        "offset": 0,
+        "limit": 25,
+    }
+    assert canonical_arguments(ListLoansArgs, {"clientId": "7"}) == {"clientId": 7}
+    assert canonical_arguments(ListClientTransactionsArgs, {"clientId": "5", "limit": "10"}) == {
+        "clientId": 5,
+        "limit": 10,
+    }
+    assert canonical_arguments(
+        SearchSavingsTransactionsArgs, {"savingsId": "2", "orderBy": "id", "sortOrder": "ASC"}
+    ) == {"savingsId": 2, "orderBy": "id", "sortOrder": "ASC"}
+    assert canonical_arguments(ListLoanTransactionsArgs, {"loanId": "8", "page": "0"}) == {
+        "loanId": 8,
+        "page": 0,
+    }
+    assert canonical_arguments(
+        GetSavingsTransactionArgs, {"savingsId": "3", "transactionId": "33"}
+    ) == {"savingsId": 3, "transactionId": 33}
+    assert canonical_arguments(
+        GetLoanTransactionArgs, {"loanId": "9", "transactionId": "3"}
+    ) == {"loanId": 9, "transactionId": 3}
+    for model, bad in (
+        (GetClientAccountsArgs, {}),
+        (GetClientAccountsArgs, {"clientId": 0}),
+        (GetSavingsAccountArgs, {}),
+        (GetSavingsAccountArgs, {"savingsId": -1}),
+        (GetLoanArgs, {}),
+        (GetLoanArgs, {"loanId": 0}),
+        (ListSavingsAccountsArgs, {"limit": 0}),
+        (ListSavingsAccountsArgs, {"limit": 101}),
+        (ListSavingsAccountsArgs, {"clientId": 1}),
+        (ListLoansArgs, {"clientId": 0}),
+        (ListLoansArgs, {"offset": -1}),
+        (ListLoansArgs, {"limit": 101}),
+        (ListClientTransactionsArgs, {}),
+        (ListClientTransactionsArgs, {"clientId": 1, "limit": 101}),
+        (SearchSavingsTransactionsArgs, {}),
+        (SearchSavingsTransactionsArgs, {"savingsId": 1, "offset": -1}),
+        (ListLoanTransactionsArgs, {}),
+        (ListLoanTransactionsArgs, {"loanId": 1, "extra": True}),
+        (GetSavingsTransactionArgs, {}),
+        (GetSavingsTransactionArgs, {"savingsId": 1}),
+        (GetSavingsTransactionArgs, {"savingsId": 0, "transactionId": 1}),
+        (GetSavingsTransactionArgs, {"savingsId": 1, "transactionId": 0}),
+        (GetLoanTransactionArgs, {}),
+        (GetLoanTransactionArgs, {"loanId": 1, "transactionId": 0}),
+        (GetLoanTransactionArgs, {"loanId": 1, "transactionId": 1, "extra": True}),
+    ):
+        try:
+            canonical_arguments(model, bad)
+            raise AssertionError(f"debió fallar: {model.__name__} {bad}")
+        except ValidationError:
+            pass
     for bad in ({"displayName": "Ana", "officeId": 1}, {"displayName": "Ana", "limit": 0}, {"displayName": "Ana", "limit": 101}):
         try:
             canonical_arguments(SearchClientsArgs, bad)

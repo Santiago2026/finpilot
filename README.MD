@@ -3,8 +3,8 @@
 FinPilot es un agente de operaciones financieras que funciona sobre un entorno
 **simulado** de [Apache Fineract](https://github.com/apache/fineract). El backend
 expone un servidor [MCP](https://modelcontextprotocol.io) (solo lectura) con
-herramientas para consultar clientes, además de un harness para evaluar el
-*tool calling* de un modelo (Fase 1).
+herramientas para consultar clientes, cuentas y préstamos, además de un harness
+para evaluar el *tool calling* de un modelo (Fase 1).
 
 > Entorno de desarrollo y pruebas. No usar con datos reales ni en producción.
 
@@ -16,10 +16,29 @@ herramientas para consultar clientes, además de un harness para evaluar el
   - `GET /health` → `{"status":"ok"}`.
   - **Servidor MCP** montado en `/mcp` (transporte *streamable HTTP*),
     deshabilitado por defecto. Al habilitarlo (`MCP_ENABLED=true`) publica
-    exactamente dos herramientas de **solo lectura**:
+    doce herramientas de **solo lectura**:
     - `search_clients(displayName?, limit?)` — busca clientes por nombre
       (coincidencia parcial).
     - `get_client(clientId)` — obtiene un cliente por su identificador.
+    - `get_client_accounts(clientId)` — resumen de cuentas de ahorro y préstamo
+      de un cliente.
+    - `get_savings_account(savingsId)` — obtiene una cuenta de ahorro por su
+      identificador.
+    - `get_loan(loanId)` — obtiene un préstamo por su identificador.
+    - `list_savings_accounts(offset?, limit?)` — lista las cuentas de ahorro
+      (paginado).
+    - `list_loans(clientId?, offset?, limit?)` — lista los préstamos,
+      opcionalmente filtrados por cliente.
+    - `list_client_transactions(clientId, offset?, limit?)` — lista las
+      transacciones de un cliente.
+    - `search_savings_transactions(savingsId, offset?, limit?, orderBy?, sortOrder?)`
+      — lista las transacciones de una cuenta de ahorro.
+    - `list_loan_transactions(loanId, page?, size?)` — lista las transacciones de
+      un préstamo.
+    - `get_savings_transaction(savingsId, transactionId)` — obtiene una
+      transacción concreta de una cuenta de ahorro.
+    - `get_loan_transaction(loanId, transactionId)` — obtiene una transacción
+      concreta de un préstamo.
   - Argumentos validados de forma estricta (`extra="forbid"`) antes de tocar
     Fineract; los fallos de Fineract se devuelven como mensajes saneados (sin
     cuerpos, credenciales ni datos personales).
@@ -29,7 +48,7 @@ herramientas para consultar clientes, además de un harness para evaluar el
     (`FINERACT_VERIFY_TLS=true`).
   - Documentación interactiva (`/docs`, `/redoc`, `/openapi.json`) deshabilitada
     por defecto (`API_DOCS_ENABLED=false`).
-- **Pruebas**: 106 pruebas (`pytest`) que cubren esquemas, registro/allowlist,
+- **Pruebas**: 216 pruebas (`pytest`) que cubren esquemas, registro/allowlist,
   cliente Fineract (mockeado con `respx`) y el protocolo MCP de extremo a
   extremo.
 - **Harness de evaluación de *tool calling*** (`scripts/eval_tool_calling.py`,

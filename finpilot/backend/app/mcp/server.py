@@ -28,7 +28,20 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.integrations.fineract.client import FineractClient
 from app.tools import registry
-from app.tools.schemas import ClientSummary, SearchClientsResult
+from app.tools.schemas import (
+    ClientAccountsResult,
+    ClientSummary,
+    ClientTransactionsResult,
+    LoansResult,
+    LoanSummary,
+    LoanTransactionsResult,
+    LoanTransactionSummary,
+    SavingsAccountsResult,
+    SavingsAccountSummary,
+    SavingsTransactionsResult,
+    SavingsTransactionSummary,
+    SearchClientsResult,
+)
 
 ClientProvider = Callable[[], FineractClient]
 
@@ -131,6 +144,137 @@ async def get_client(clientId: int) -> ClientSummary:
         raise ToolError(str(exc)) from exc
 
 
+async def get_client_accounts(clientId: int) -> ClientAccountsResult:
+    """Obtiene el resumen de cuentas de ahorro y préstamo de un cliente. Solo lectura."""
+    try:
+        return await registry.dispatch(
+            "get_client_accounts", {"clientId": clientId}, _get_client()
+        )
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
+async def get_savings_account(savingsId: int) -> SavingsAccountSummary:
+    """Obtiene los datos de una cuenta de ahorro por su identificador. Solo lectura."""
+    try:
+        return await registry.dispatch(
+            "get_savings_account", {"savingsId": savingsId}, _get_client()
+        )
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
+async def get_loan(loanId: int) -> LoanSummary:
+    """Obtiene los datos de un préstamo por su identificador. Solo lectura."""
+    try:
+        return await registry.dispatch("get_loan", {"loanId": loanId}, _get_client())
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
+def _compact(**values: Any) -> dict[str, Any]:
+    """Construye los argumentos crudos descartando los valores ``None``."""
+    return {key: value for key, value in values.items() if value is not None}
+
+
+async def list_savings_accounts(
+    offset: int | None = None,
+    limit: int | None = None,
+) -> SavingsAccountsResult:
+    """Lista las cuentas de ahorro (paginado). Solo lectura."""
+    raw = _compact(offset=offset, limit=limit)
+    try:
+        return await registry.dispatch("list_savings_accounts", raw, _get_client())
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
+async def list_loans(
+    clientId: int | None = None,
+    offset: int | None = None,
+    limit: int | None = None,
+) -> LoansResult:
+    """Lista los préstamos, opcionalmente por cliente (paginado). Solo lectura."""
+    raw = _compact(clientId=clientId, offset=offset, limit=limit)
+    try:
+        return await registry.dispatch("list_loans", raw, _get_client())
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
+async def list_client_transactions(
+    clientId: int,
+    offset: int | None = None,
+    limit: int | None = None,
+) -> ClientTransactionsResult:
+    """Lista las transacciones de un cliente. Solo lectura."""
+    raw = _compact(clientId=clientId, offset=offset, limit=limit)
+    try:
+        return await registry.dispatch("list_client_transactions", raw, _get_client())
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
+async def search_savings_transactions(
+    savingsId: int,
+    offset: int | None = None,
+    limit: int | None = None,
+    orderBy: str | None = None,
+    sortOrder: str | None = None,
+) -> SavingsTransactionsResult:
+    """Lista las transacciones de una cuenta de ahorro. Solo lectura."""
+    raw = _compact(
+        savingsId=savingsId,
+        offset=offset,
+        limit=limit,
+        orderBy=orderBy,
+        sortOrder=sortOrder,
+    )
+    try:
+        return await registry.dispatch(
+            "search_savings_transactions", raw, _get_client()
+        )
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
+async def list_loan_transactions(
+    loanId: int,
+    page: int | None = None,
+    size: int | None = None,
+) -> LoanTransactionsResult:
+    """Lista las transacciones de un préstamo. Solo lectura."""
+    raw = _compact(loanId=loanId, page=page, size=size)
+    try:
+        return await registry.dispatch("list_loan_transactions", raw, _get_client())
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
+async def get_savings_transaction(
+    savingsId: int,
+    transactionId: int,
+) -> SavingsTransactionSummary:
+    """Obtiene una transacción concreta de una cuenta de ahorro. Solo lectura."""
+    raw = _compact(savingsId=savingsId, transactionId=transactionId)
+    try:
+        return await registry.dispatch("get_savings_transaction", raw, _get_client())
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
+async def get_loan_transaction(
+    loanId: int,
+    transactionId: int,
+) -> LoanTransactionSummary:
+    """Obtiene una transacción concreta de un préstamo. Solo lectura."""
+    raw = _compact(loanId=loanId, transactionId=transactionId)
+    try:
+        return await registry.dispatch("get_loan_transaction", raw, _get_client())
+    except registry.ToolErrorBase as exc:
+        raise ToolError(str(exc)) from exc
+
+
 mcp_server = MCPServer(
     name="finpilot",
     instructions=(
@@ -140,6 +284,16 @@ mcp_server = MCPServer(
     tools=[
         _canonical_tool(search_clients, "search_clients"),
         _canonical_tool(get_client, "get_client"),
+        _canonical_tool(get_client_accounts, "get_client_accounts"),
+        _canonical_tool(get_savings_account, "get_savings_account"),
+        _canonical_tool(get_loan, "get_loan"),
+        _canonical_tool(list_savings_accounts, "list_savings_accounts"),
+        _canonical_tool(list_loans, "list_loans"),
+        _canonical_tool(list_client_transactions, "list_client_transactions"),
+        _canonical_tool(search_savings_transactions, "search_savings_transactions"),
+        _canonical_tool(list_loan_transactions, "list_loan_transactions"),
+        _canonical_tool(get_savings_transaction, "get_savings_transaction"),
+        _canonical_tool(get_loan_transaction, "get_loan_transaction"),
     ],
 )
 

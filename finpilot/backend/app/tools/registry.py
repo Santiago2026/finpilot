@@ -12,7 +12,9 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from app.integrations.fineract import accounts as fineract_accounts
 from app.integrations.fineract import clients as fineract_clients
+from app.integrations.fineract import transactions as fineract_transactions
 from app.integrations.fineract.client import (
     FineractClient,
     FineractConfigurationError,
@@ -23,10 +25,30 @@ from app.integrations.fineract.client import (
     FineractTimeoutError,
 )
 from app.tools.schemas import (
+    ClientAccountsResult,
     ClientSummary,
+    ClientTransactionsResult,
+    GetClientAccountsArgs,
     GetClientArgs,
+    GetLoanArgs,
+    GetLoanTransactionArgs,
+    GetSavingsAccountArgs,
+    GetSavingsTransactionArgs,
+    ListClientTransactionsArgs,
+    ListLoansArgs,
+    ListLoanTransactionsArgs,
+    ListSavingsAccountsArgs,
+    LoansResult,
+    LoanSummary,
+    LoanTransactionsResult,
+    LoanTransactionSummary,
+    SavingsAccountsResult,
+    SavingsAccountSummary,
+    SavingsTransactionsResult,
+    SavingsTransactionSummary,
     SearchClientsArgs,
     SearchClientsResult,
+    SearchSavingsTransactionsArgs,
 )
 
 
@@ -51,7 +73,23 @@ class UpstreamError(ToolErrorBase):
         self.status_code = status_code
 
 
-ToolHandler = Callable[[FineractClient, BaseModel], Awaitable[SearchClientsResult | ClientSummary]]
+ToolResult = (
+    SearchClientsResult
+    | ClientSummary
+    | ClientAccountsResult
+    | SavingsAccountSummary
+    | LoanSummary
+    | ClientTransactionsResult
+    | SavingsTransactionsResult
+    | LoanTransactionsResult
+    | SavingsTransactionSummary
+    | LoanTransactionSummary
+    | SavingsAccountsResult
+    | LoansResult
+)
+
+
+ToolHandler = Callable[[FineractClient, BaseModel], Awaitable[ToolResult]]
 
 
 async def _run_search(client: FineractClient, args: BaseModel) -> SearchClientsResult:
@@ -64,6 +102,72 @@ async def _run_get(client: FineractClient, args: BaseModel) -> ClientSummary:
     return await fineract_clients.get_client(client, args)
 
 
+async def _run_get_client_accounts(
+    client: FineractClient, args: BaseModel
+) -> ClientAccountsResult:
+    assert isinstance(args, GetClientAccountsArgs)
+    return await fineract_accounts.get_client_accounts(client, args)
+
+
+async def _run_get_savings_account(
+    client: FineractClient, args: BaseModel
+) -> SavingsAccountSummary:
+    assert isinstance(args, GetSavingsAccountArgs)
+    return await fineract_accounts.get_savings_account(client, args)
+
+
+async def _run_get_loan(client: FineractClient, args: BaseModel) -> LoanSummary:
+    assert isinstance(args, GetLoanArgs)
+    return await fineract_accounts.get_loan(client, args)
+
+
+async def _run_list_savings_accounts(
+    client: FineractClient, args: BaseModel
+) -> SavingsAccountsResult:
+    assert isinstance(args, ListSavingsAccountsArgs)
+    return await fineract_accounts.list_savings_accounts(client, args)
+
+
+async def _run_list_loans(client: FineractClient, args: BaseModel) -> LoansResult:
+    assert isinstance(args, ListLoansArgs)
+    return await fineract_accounts.list_loans(client, args)
+
+
+async def _run_list_client_transactions(
+    client: FineractClient, args: BaseModel
+) -> ClientTransactionsResult:
+    assert isinstance(args, ListClientTransactionsArgs)
+    return await fineract_transactions.list_client_transactions(client, args)
+
+
+async def _run_search_savings_transactions(
+    client: FineractClient, args: BaseModel
+) -> SavingsTransactionsResult:
+    assert isinstance(args, SearchSavingsTransactionsArgs)
+    return await fineract_transactions.search_savings_transactions(client, args)
+
+
+async def _run_list_loan_transactions(
+    client: FineractClient, args: BaseModel
+) -> LoanTransactionsResult:
+    assert isinstance(args, ListLoanTransactionsArgs)
+    return await fineract_transactions.list_loan_transactions(client, args)
+
+
+async def _run_get_savings_transaction(
+    client: FineractClient, args: BaseModel
+) -> SavingsTransactionSummary:
+    assert isinstance(args, GetSavingsTransactionArgs)
+    return await fineract_transactions.get_savings_transaction(client, args)
+
+
+async def _run_get_loan_transaction(
+    client: FineractClient, args: BaseModel
+) -> LoanTransactionSummary:
+    assert isinstance(args, GetLoanTransactionArgs)
+    return await fineract_transactions.get_loan_transaction(client, args)
+
+
 READ_TOOLS: dict[str, tuple[type[BaseModel], ToolHandler, str]] = {
     "search_clients": (
         SearchClientsArgs,
@@ -74,6 +178,56 @@ READ_TOOLS: dict[str, tuple[type[BaseModel], ToolHandler, str]] = {
         GetClientArgs,
         _run_get,
         "Obtiene los datos de un cliente por su identificador. Solo lectura.",
+    ),
+    "get_client_accounts": (
+        GetClientAccountsArgs,
+        _run_get_client_accounts,
+        "Obtiene el resumen de cuentas de ahorro y préstamo de un cliente. Solo lectura.",
+    ),
+    "get_savings_account": (
+        GetSavingsAccountArgs,
+        _run_get_savings_account,
+        "Obtiene los datos de una cuenta de ahorro por su identificador. Solo lectura.",
+    ),
+    "get_loan": (
+        GetLoanArgs,
+        _run_get_loan,
+        "Obtiene los datos de un préstamo por su identificador. Solo lectura.",
+    ),
+    "list_savings_accounts": (
+        ListSavingsAccountsArgs,
+        _run_list_savings_accounts,
+        "Lista las cuentas de ahorro (paginado). Solo lectura.",
+    ),
+    "list_loans": (
+        ListLoansArgs,
+        _run_list_loans,
+        "Lista los préstamos, opcionalmente por cliente (paginado). Solo lectura.",
+    ),
+    "list_client_transactions": (
+        ListClientTransactionsArgs,
+        _run_list_client_transactions,
+        "Lista las transacciones de un cliente. Solo lectura.",
+    ),
+    "search_savings_transactions": (
+        SearchSavingsTransactionsArgs,
+        _run_search_savings_transactions,
+        "Lista las transacciones de una cuenta de ahorro. Solo lectura.",
+    ),
+    "list_loan_transactions": (
+        ListLoanTransactionsArgs,
+        _run_list_loan_transactions,
+        "Lista las transacciones de un préstamo. Solo lectura.",
+    ),
+    "get_savings_transaction": (
+        GetSavingsTransactionArgs,
+        _run_get_savings_transaction,
+        "Obtiene una transacción concreta de una cuenta de ahorro. Solo lectura.",
+    ),
+    "get_loan_transaction": (
+        GetLoanTransactionArgs,
+        _run_get_loan_transaction,
+        "Obtiene una transacción concreta de un préstamo. Solo lectura.",
     ),
 }
 
@@ -102,7 +256,7 @@ def _to_upstream_error(exc: FineractError) -> UpstreamError:
 
 async def dispatch(
     name: str, raw_arguments: dict[str, Any], fineract: FineractClient
-) -> SearchClientsResult | ClientSummary:
+) -> ToolResult:
     """Valida y ejecuta una herramienta del allowlist.
 
     Lanza ``ToolNotFoundError`` para cualquier herramienta no permitida,

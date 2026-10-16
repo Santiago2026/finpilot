@@ -26,13 +26,39 @@ def _tool(tools, name: str):
 async def test_initialize_identifies_server(mcp_settings: Settings) -> None:
     async with connected_mcp_session(mcp_settings) as session:
         tools = await session.list_tools()
-        assert {t.name for t in tools.tools} == {"search_clients", "get_client"}
+        assert {t.name for t in tools.tools} == {
+            "search_clients",
+            "get_client",
+            "get_client_accounts",
+            "get_savings_account",
+            "get_loan",
+            "list_savings_accounts",
+            "list_loans",
+            "list_client_transactions",
+            "search_savings_transactions",
+            "list_loan_transactions",
+            "get_savings_transaction",
+            "get_loan_transaction",
+        }
 
 
 async def test_tool_descriptions_state_read_only(mcp_settings: Settings) -> None:
     async with connected_mcp_session(mcp_settings) as session:
         tools = await session.list_tools()
-        for name in ("search_clients", "get_client"):
+        for name in (
+            "search_clients",
+            "get_client",
+            "get_client_accounts",
+            "get_savings_account",
+            "get_loan",
+            "list_savings_accounts",
+            "list_loans",
+            "list_client_transactions",
+            "search_savings_transactions",
+            "list_loan_transactions",
+            "get_savings_transaction",
+            "get_loan_transaction",
+        ):
             description = (_tool(tools, name).description or "").lower()
             assert "lectura" in description
 
@@ -152,7 +178,23 @@ async def test_docs_enabled_when_configured() -> None:
                 assert (await hc.get(path)).status_code == 200, path
 
 
-@pytest.mark.parametrize("name", ["search_clients", "get_client"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "search_clients",
+        "get_client",
+        "get_client_accounts",
+        "get_savings_account",
+        "get_loan",
+        "list_savings_accounts",
+        "list_loans",
+        "list_client_transactions",
+        "search_savings_transactions",
+        "list_loan_transactions",
+        "get_savings_transaction",
+        "get_loan_transaction",
+    ],
+)
 async def test_published_schema_forbids_additional_properties(
     mcp_settings: Settings, name: str
 ) -> None:
@@ -180,7 +222,20 @@ async def test_mcp_without_trailing_slash_serves_tools(mcp_settings: Settings) -
     url = "http://127.0.0.1:8000/mcp"
     async with connected_mcp_session(mcp_settings, url=url) as session:
         tools = await session.list_tools()
-        assert {t.name for t in tools.tools} == {"search_clients", "get_client"}
+        assert {t.name for t in tools.tools} == {
+            "search_clients",
+            "get_client",
+            "get_client_accounts",
+            "get_savings_account",
+            "get_loan",
+            "list_savings_accounts",
+            "list_loans",
+            "list_client_transactions",
+            "search_savings_transactions",
+            "list_loan_transactions",
+            "get_savings_transaction",
+            "get_loan_transaction",
+        }
 
 
 async def test_apps_do_not_share_session_manager(mcp_settings: Settings) -> None:
@@ -193,7 +248,20 @@ async def test_apps_do_not_share_session_manager(mcp_settings: Settings) -> None
     create_app(mcp_settings)
     async with connected_mcp_session(mcp_settings, application=first) as session:
         tools = await session.list_tools()
-        assert {t.name for t in tools.tools} == {"search_clients", "get_client"}
+        assert {t.name for t in tools.tools} == {
+            "search_clients",
+            "get_client",
+            "get_client_accounts",
+            "get_savings_account",
+            "get_loan",
+            "list_savings_accounts",
+            "list_loans",
+            "list_client_transactions",
+            "search_savings_transactions",
+            "list_loan_transactions",
+            "get_savings_transaction",
+            "get_loan_transaction",
+        }
 
 
 async def _asgi_status(app, headers: dict[bytes, bytes]) -> int:
