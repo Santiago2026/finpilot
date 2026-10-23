@@ -24,6 +24,20 @@ class Settings(BaseSettings):
     )
 
     # --- Conexión con Apache Fineract ---
+    database_url: str = "sqlite+aiosqlite:///./finpilot.db"
+    jwt_secret: SecretStr = Field(default=SecretStr(""))
+    jwt_algorithm: str = "HS256"
+    jwt_expiration_minutes: int = Field(default=60, gt=0)
+    auth_disabled: bool = False
+    writes_enabled: bool = False
+    watsonx_api_key: SecretStr = Field(default=SecretStr(""))
+    watsonx_url: str = "https://us-south.ml.cloud.ibm.com"
+    watsonx_project_id: str = ""
+    watsonx_model_id: str = "ibm/granite-3-8b-instruct"
+    langchain_api_key: SecretStr = Field(default=SecretStr(""))
+    langchain_project: str = "finpilot"
+    langchain_tracing_v2: bool = False
+    mcp_url: str = "http://127.0.0.1:8000/mcp/"
     fineract_base_url: str = Field(
         default="https://localhost:8443/fineract-provider",
         description="URL base del contexto de Fineract (sin el prefijo /api/v1).",
@@ -97,11 +111,17 @@ class Settings(BaseSettings):
             "fineract_verify_tls": self.fineract_verify_tls,
             "approval_api_token_set": bool(self.approval_api_token.get_secret_value()),
             "approval_ttl_seconds": self.approval_ttl_seconds,
+            "watsonx_api_key_set": bool(self.watsonx_api_key.get_secret_value()),
+            "watsonx_project_id_set": bool(self.watsonx_project_id),
+            "langchain_api_key_set": bool(self.langchain_api_key.get_secret_value()),
             "policy_max_transaction_amount": str(self.policy_max_transaction_amount),
             "policy_approval_threshold_amount": str(self.policy_approval_threshold_amount),
             "mcp_enabled": self.mcp_enabled,
             "mcp_dev_token_set": bool(self.mcp_dev_token.get_secret_value()),
             "api_docs_enabled": self.api_docs_enabled,
+            "database_url": self.database_url,
+            "auth_disabled": self.auth_disabled,
+            "writes_enabled": self.writes_enabled,
             "log_level": self.log_level,
         }
 
