@@ -47,7 +47,7 @@ class FineractResponseError(FineractError):
 
 
 class FineractClient:
-    """Cliente HTTP asíncrono y de solo lectura para la API REST de Fineract.
+    """Cliente HTTP asíncrono para la API REST de Fineract.
 
     Centraliza la URL base, la autenticación Basic, la cabecera de tenant y el
     manejo de errores. En esta etapa solo expone peticiones GET.
@@ -111,6 +111,16 @@ class FineractClient:
             raise FineractConnectionError(
                 f"No se pudo conectar con Fineract ({type(exc).__name__})"
             ) from exc
+        return self._handle_response(response)
+
+    async def post(self, path: str, *, json: dict[str, Any]) -> Any:
+        """Realiza un POST explícito; su uso está sujeto a la política HITL."""
+        try:
+            response = await self._client.post(self._build_url(path), json=json)
+        except httpx.TimeoutException as exc:
+            raise FineractTimeoutError("Tiempo de espera agotado al escribir en Fineract") from exc
+        except httpx.TransportError as exc:
+            raise FineractConnectionError("No se pudo conectar con Fineract") from exc
         return self._handle_response(response)
 
     def _handle_response(self, response: httpx.Response) -> Any:

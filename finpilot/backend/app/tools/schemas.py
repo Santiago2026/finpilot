@@ -8,6 +8,33 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+class TransferFundsArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    from_account_id: int = Field(alias="fromAccountId", ge=1)
+    to_account_id: int = Field(alias="toAccountId", ge=1)
+    transaction_date: str = Field(alias="transactionDate", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    amount: float = Field(gt=0)
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    description: str = Field(default="FinPilot transfer", max_length=250)
+    approval_id: int | None = Field(default=None, alias="approvalId", ge=1)
+    payload_hash: str | None = Field(default=None, alias="payloadHash", pattern="^[0-9a-f]{64}$")
+
+class UpdateFraudStatusArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    transaction_id: str = Field(alias="transactionId", min_length=1, max_length=100)
+    status: str = Field(pattern="^(REVIEW|CLEARED|CONFIRMED)$")
+    reason: str = Field(min_length=1, max_length=500)
+    approval_id: int | None = Field(default=None, alias="approvalId", ge=1)
+    payload_hash: str | None = Field(default=None, alias="payloadHash", pattern="^[0-9a-f]{64}$")
+
+class TransferFundsMCPArgs(TransferFundsArgs):
+    approval_id: int = Field(alias="approvalId", ge=1)
+    payload_hash: str = Field(alias="payloadHash", pattern="^[0-9a-f]{64}$")
+
+class UpdateFraudStatusMCPArgs(UpdateFraudStatusArgs):
+    approval_id: int = Field(alias="approvalId", ge=1)
+    payload_hash: str = Field(alias="payloadHash", pattern="^[0-9a-f]{64}$")
+
 
 class SearchClientsArgs(BaseModel):
     """Argumentos de ``search_clients`` (coincidencia parcial de nombre)."""
