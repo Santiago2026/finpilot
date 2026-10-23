@@ -10,6 +10,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.integrations.fineract.client import FineractClient
 from app.mcp import server as mcp_module
+from app.api.routes import router as api_router
 
 configure_logging(get_settings().log_level)
 
@@ -71,9 +72,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
     )
+    application.include_router(api_router)
 
     @application.get("/health")
-    def health_check():
+    async def health_check():
         return {"status": "ok"}
 
     if resolved.mcp_enabled:
