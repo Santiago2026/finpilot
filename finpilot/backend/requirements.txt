@@ -8,6 +8,7 @@ aiosqlite
 alembic
 PyJWT>=2.8
 langchain>=1.0
+langchain-huggingface
 langchain-ibm
 langsmith
 langchain-mcp-adapters

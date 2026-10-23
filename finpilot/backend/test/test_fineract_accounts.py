@@ -199,9 +199,12 @@ async def test_get_savings_account_parses_and_minimizes() -> None:
     assert summary.currency is not None and summary.currency.code == "USD"
 
     dumped = summary.model_dump(by_alias=True, exclude_none=True)
-    assert "summary" not in dumped
+    assert summary.summary is not None
+    assert summary.summary.account_balance == 1234.56
+    assert summary.summary.available_balance == 1000.0
+    assert dumped["summary"] == {"accountBalance": 1234.56, "availableBalance": 1000.0}
     assert "timeline" not in dumped
-    assert "accountBalance" not in dumped
+    assert "accountBalance" in dumped["summary"]
 
 
 @respx.mock
@@ -326,8 +329,9 @@ async def test_list_savings_accounts_builds_params_and_minimizes() -> None:
     assert account.client_name == "Ana Pérez"
 
     dumped = account.model_dump(by_alias=True, exclude_none=True)
-    assert "summary" not in dumped
-    assert "accountBalance" not in dumped
+    assert account.summary is not None
+    assert account.summary.account_balance == 1234.56
+    assert dumped["summary"] == {"accountBalance": 1234.56}
     assert "subStatus" not in dumped
     assert "sentinel" not in json.dumps(dumped)
 

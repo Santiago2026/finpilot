@@ -141,8 +141,8 @@ async def test_get_savings_account_flow_minimizes_fields(
     assert data["id"] == 3
     assert data["savingsProductName"] == "Ahorro Plus"
     assert data["currency"] == {"code": "USD"}
-    assert "summary" not in data
-    assert "accountBalance" not in json.dumps(data)
+    assert data["summary"]["accountBalance"] == 1234.56
+    assert "timeline" not in data
 
 
 async def test_get_loan_flow_requests_fields_and_minimizes(
@@ -197,8 +197,8 @@ async def test_list_savings_accounts_flow_minimizes_fields(
     account = data["savingsAccounts"][0]
     assert account["id"] == 3
     assert account["savingsProductName"] == "Ahorro Plus"
-    assert "summary" not in account
-    assert "accountBalance" not in json.dumps(data)
+    assert account["summary"]["accountBalance"] == 1234.56
+    assert "subStatus" not in account
     assert "sentinel-secret" not in json.dumps(data)
     assert {call.request.method for call in route.calls} == {"GET"}
     assert route.calls.last.request.url.params["limit"] == "25"

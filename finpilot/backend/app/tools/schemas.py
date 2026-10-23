@@ -162,6 +162,15 @@ class ClientAccountsResult(BaseModel):
     )
 
 
+class SavingsAccountBalance(BaseModel):
+    """Saldos de una cuenta de ahorro (vista reducida)."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    account_balance: float | None = Field(default=None, alias="accountBalance")
+    available_balance: float | None = Field(default=None, alias="availableBalance")
+
+
 class SavingsAccountSummary(BaseModel):
     """Vista reducida de una cuenta de ahorro (data minimization)."""
 
@@ -175,6 +184,7 @@ class SavingsAccountSummary(BaseModel):
     product_name: str | None = Field(default=None, alias="savingsProductName")
     status: OptionSummary | None = None
     currency: CurrencySummary | None = None
+    summary: SavingsAccountBalance | None = None
 
 
 class LoanSummary(BaseModel):

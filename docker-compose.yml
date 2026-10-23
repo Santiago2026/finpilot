@@ -1,7 +1,7 @@
 services:
   backend:
     build:
-      context: .
+      context: ./finpilot/backend
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -29,6 +29,11 @@ services:
       WATSONX_API_KEY: ${WATSONX_API_KEY:-}
       WATSONX_URL: ${WATSONX_URL:-https://us-south.ml.cloud.ibm.com}
       WATSONX_PROJECT_ID: ${WATSONX_PROJECT_ID:-}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-huggingface}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_MODEL_ID: ${HF_MODEL_ID:-Qwen/Qwen2.5-7B-Instruct}
+      HF_PROVIDER: ${HF_PROVIDER:-auto}
+      HF_MAX_NEW_TOKENS: ${HF_MAX_NEW_TOKENS:-1024}
       LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
       LANGCHAIN_API_KEY: ${LANGCHAIN_API_KEY:-}
       LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT:-finpilot}

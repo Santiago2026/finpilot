@@ -30,6 +30,19 @@ class Settings(BaseSettings):
     jwt_expiration_minutes: int = Field(default=60, gt=0)
     auth_disabled: bool = False
     writes_enabled: bool = False
+    # --- Modelo / planificador (LangChain) ---
+    model_provider: str = Field(
+        default="huggingface",
+        description="Proveedor del modelo: huggingface, ollama o watsonx.",
+    )
+    hf_token: SecretStr = Field(default=SecretStr(""))
+    hf_model_id: str = "meta-llama/Llama-3.1-8B-Instruct"
+    hf_provider: str = "auto"
+    hf_max_new_tokens: int = Field(default=1024, gt=0, le=8192)
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:1.5b"
+    ollama_num_ctx: int = Field(default=16384, gt=0)
+    ollama_num_predict: int = Field(default=1024, gt=0)
     watsonx_api_key: SecretStr = Field(default=SecretStr(""))
     watsonx_url: str = "https://us-south.ml.cloud.ibm.com"
     watsonx_project_id: str = ""
@@ -111,6 +124,13 @@ class Settings(BaseSettings):
             "fineract_verify_tls": self.fineract_verify_tls,
             "approval_api_token_set": bool(self.approval_api_token.get_secret_value()),
             "approval_ttl_seconds": self.approval_ttl_seconds,
+            "model_provider": self.model_provider,
+            "hf_token_set": bool(self.hf_token.get_secret_value()),
+            "hf_model_id": self.hf_model_id,
+            "hf_provider": self.hf_provider,
+            "hf_max_new_tokens": self.hf_max_new_tokens,
+            "ollama_base_url": self.ollama_base_url,
+            "ollama_model": self.ollama_model,
             "watsonx_api_key_set": bool(self.watsonx_api_key.get_secret_value()),
             "watsonx_project_id_set": bool(self.watsonx_project_id),
             "langchain_api_key_set": bool(self.langchain_api_key.get_secret_value()),
