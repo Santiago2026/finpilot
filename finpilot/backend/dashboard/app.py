@@ -62,22 +62,22 @@ with st.sidebar:
     )
     st.divider()
     st.markdown(
-        "**Sin modelo configurado** usa el plan estructurado. "
-        "**Con Hugging Face (`HF_TOKEN`) o Watsonx** desmarca la casilla y escribe una instrucción libre."
+        "**Modelo configurado en el backend**: si `MODEL_PROVIDER=ollama`, "
+        "`huggingface` o `watsonx`, deja la casilla de plan estructurado **desmarcada** "
+        "y escribe una instrucción libre. Si no hay modelo, marca la casilla y usa un plan de ejemplo."
     )
 
 headers = {"Authorization": f"Bearer {token}"} if token else {}
 
 st.subheader("Nueva operación")
 instruction = st.text_area(
-    "Instrucción (texto para el operador o para el LLM)",
+    "Instrucción (texto libre para el LLM o para el plan estructurado)",
     placeholder="Ej.: Consulta el saldo de la cuenta 1",
 )
-
 use_plan = st.checkbox(
-    "Usar plan estructurado (no requiere Watsonx)",
-    value=True,
-    help="El backend acepta un plan ya construido y lo valida de forma determinística.",
+    "Usar plan estructurado (sin LLM)",
+    value=False,
+    help="Marca esta casilla para usar un plan de ejemplo sin LLM. Desmárcala para que el backend use el modelo configurado (Ollama, Hugging Face o Watsonx).",
 )
 
 plan_payload = None
@@ -113,7 +113,7 @@ if st.button("Enviar", type="primary"):
         if use_plan:
             body["plan"] = plan_payload
         try:
-            response = requests.post(f"{BASE}/ops", json=body, headers=headers, timeout=60)
+            response = requests.post(f"{BASE}/ops", json=body, headers=headers, timeout=250)
             if response.ok:
                 st.success(f"HTTP {response.status_code}")
             else:
@@ -147,7 +147,7 @@ try:
                         f"{BASE}/approvals/{item['id']}/decide",
                         json={"decision": choice},
                         headers=headers,
-                        timeout=60,
+                        timeout=250,
                     )
                     if decision.ok:
                         st.success(f"HTTP {decision.status_code}")
