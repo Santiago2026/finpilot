@@ -116,6 +116,52 @@ cp .env.example .env      # ajustar las credenciales del sandbox
 Detalle y notas de seguridad en
 [`finpilot/backend/docs/run-local.md`](finpilot/backend/docs/run-local.md).
 
+### Cómo levantar con Docker
+
+El Compose raíz ejecuta el backend y el Dashboard. Fineract queda fuera de este
+Compose y debe estar levantado previamente, unido a la red Docker externa
+`fineract_default` (por ejemplo, con
+`docker compose -f fineract/docker-compose-postgresql.yml up -d`). En esa red,
+el backend usa `https://fineract-fineract-1:8443/fineract-provider` por defecto.
+Compose no puede declarar `depends_on: fineract` porque Fineract no es un
+servicio de este proyecto; la dependencia externa se resuelve mediante la red y
+la URL. El contenedor de Fineract publica 8443 y se resuelve por el nombre de
+servicio/contenedor `fineract-fineract-1` en `fineract_default`.
+
+```bash
+cp .env.example .env
+# Edita .env: sustituye los valores de ejemplo por las credenciales del sandbox
+# y genera un JWT_SECRET aleatorio de al menos 32 caracteres.
+docker compose config -q
+docker compose up --build -d
+docker compose exec backend alembic upgrade head
+docker compose exec backend python scripts/seed.py
+docker compose ps
+curl http://127.0.0.1:8000/health
+curl -k https://localhost:8443/fineract-provider/actuator/health
+```
+
+Después de `docker compose up -d --build`, el comando
+`docker compose exec backend python scripts/seed.py` es el seed reproducible
+único para usuarios FinPilot y sandbox Fineract: crea/recupera producto, dos
+clientes y cuentas activas, y completa el saldo mínimo de 1000. Repetirlo no
+duplica recursos ni depósitos. Requiere `FINERACT_BASE_URL`, `FINERACT_USERNAME`,
+`FINERACT_PASSWORD` y `FINERACT_TENANT_ID` en `.env`. El Compose raíz no contiene
+Fineract; este debe estar healthy y conectado a la red externa `fineract_default`.
+
+El Dashboard queda en <http://localhost:8502> por defecto y el backend en
+<http://localhost:8000>. La base SQLite persiste en el volumen Docker
+`finpilot_db`. En el sandbox local con certificado autofirmado, el ejemplo usa
+`FINERACT_VERIFY_TLS=false`; cuando el certificado tenga una CA confiable,
+cámbialo a `true` y configura `FINERACT_CA_BUNDLE`. El endpoint MCP y las tools
+de escritura de demostración se habilitan con `MCP_ENABLED=true`, `MCP_URL` y
+`WRITES_ENABLED=true`; toda escritura sigue requiriendo aprobación HITL. Las
+variables `FINERACT_BASE_URL`, `FINERACT_USERNAME`, `FINERACT_PASSWORD` y
+`FINERACT_TENANT_ID` deben apuntar al sandbox de la red externa. No guardes
+secretos en el repositorio. Para detener los servicios sin borrar la base:
+`docker compose down` (no añadir `-v`). Si el puerto 8501 está libre, puedes
+establecer `FINPILOT_DASHBOARD_PORT=8501` en `.env`.
+
 ### Pruebas
 
 ```bash
@@ -123,7 +169,7 @@ cd finpilot/backend
 ../../.venv/bin/python -m pytest -q
 ```
 
-Referencia actual: **106 passed**.
+Referencia actual: **235 passed** (verificación del flujo HITL y seed, 2026-10-22).
 
 ### Harness de evaluación (Fase 1)
 
