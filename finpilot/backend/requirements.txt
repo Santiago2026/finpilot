@@ -3,3 +3,13 @@ uvicorn[standard]
 httpx
 pydantic-settings
 mcp==2.3.0
+SQLAlchemy[asyncio]>=2.0,<3
+aiosqlite
+alembic
+PyJWT>=2.8
+langchain>=1.0
+langchain-ibm
+langsmith
+langchain-mcp-adapters
+streamlit
+requests
