@@ -81,7 +81,11 @@ async def submit(client):
     response=await client.post("/api/v1/ops",json={"instruction":"Transfer 25 USD between test accounts","plan":transfer_plan()})
     assert response.status_code==202, response.text
     assert response.json()["status"]=="AWAITING_APPROVAL"
-    return response.json()
+    body=response.json()
+    # Contrato que consume el dashboard: plan y nombre de la tool por paso.
+    assert body["plan"]["steps"][0]["tool_name"]=="transfer_funds"
+    assert body["steps"][0]["tool_name"]=="transfer_funds"
+    return body
 
 def audit_types(memory):
     return [row.event_type for row in memory.rows[AuditEvent].values()]
@@ -113,6 +117,15 @@ async def test_sensitive_approval_executes_only_after_approval_and_audits(hitl):
             mcp=mock_mcp_call({"content":[{"type":"text","text":"{\"resourceId\":901,\"status\":\"COMPLETED\"}"}],"structuredContent":{"resourceId":901,"status":"COMPLETED"}})
             response=await client.post(f"/api/v1/approvals/{approval_id}/decide",json={"decision":"APPROVED"},headers={"x-test-role":"APPROVER"})
         assert response.status_code==200, response.text
+        body=response.json()
+        assert body["status"]=="APPROVED"
+        execution=body["execution"]
+        assert execution["status"]=="COMPLETED"
+        assert execution["request_id"]==next(iter(memory.rows[AgentRequest]))
+        assert execution["plan"]==transfer_plan()
+        assert execution["steps"][0]["tool_name"]=="transfer_funds"
+        assert execution["steps"][0]["status"]=="COMPLETED"
+        assert execution["steps"][0]["result"]["resourceId"]==901
         assert mcp.call_count==3
         rpc= json.loads(mcp.calls.last.request.content)
         assert rpc["method"]=="tools/call"
@@ -176,6 +189,9 @@ async def test_rejection_never_executes_and_updates_request_state(hitl):
         result=await submit(client); approval_id=result["steps"][0]["approval_id"]
         response=await client.post(f"/api/v1/approvals/{approval_id}/decide",json={"decision":"REJECTED"},headers={"x-test-role":"APPROVER"})
     assert response.status_code==200
+    body=response.json()
+    assert body["status"]=="REJECTED"
+    assert body["execution"] is None
     assert memory.rows[ApprovalRequest][approval_id].status=="REJECTED"
     assert next(iter(memory.rows[AgentRequest].values())).status=="REJECTED"
     assert not memory.rows[SandboxExecution]

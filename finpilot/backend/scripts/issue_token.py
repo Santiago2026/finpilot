@@ -23,7 +23,7 @@ def main():
         if user is None:
             raise SystemExit("Usuario activo no encontrado")
         now = datetime.now(timezone.utc)
-        token = jwt.encode({"sub": user.username, "iat": now, "exp": now + timedelta(minutes=settings.jwt_expiration_minutes)}, secret, algorithm=settings.jwt_algorithm)
+        token = jwt.encode({"sub": user.username, "role": user.role, "iat": now, "exp": now + timedelta(minutes=settings.jwt_expiration_minutes)}, secret, algorithm=settings.jwt_algorithm)
         print(token)
     engine.dispose()
 if __name__ == "__main__": main()

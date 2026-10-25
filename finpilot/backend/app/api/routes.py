@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 import json
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 import httpx
 from mcp_types.version import LATEST_PROTOCOL_VERSION
@@ -142,6 +143,9 @@ class OpsInput(BaseModel):
 class DecisionInput(BaseModel):
     model_config=ConfigDict(extra="forbid")
     decision: str = Field(pattern="^(APPROVED|REJECTED)$")
+class DevTokenInput(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    username: str = Field(min_length=1, max_length=64)
 
 async def current_user(authorization: str | None = Header(default=None), session: AsyncSession=Depends(get_session)):
     settings=get_settings()
@@ -159,6 +163,30 @@ async def current_user(authorization: str | None = Header(default=None), session
     user=await session.scalar(select(User).where(User.username==claims.get("sub"), User.active.is_(True)))
     if user is None: raise HTTPException(401, "Usuario inválido")
     return user
+
+@router.post("/dev/token")
+async def dev_token(body: DevTokenInput, session: AsyncSession=Depends(get_session)):
+    """Emite un JWT de desarrollo para el dashboard (solo localhost).
+
+    Deshabilitado por defecto con ``DEV_TOKEN_ENABLED=false``. Permite elegir un
+    usuario activo (por ejemplo ``operator``, ``approver`` o ``admin``) sin
+    autenticación previa; es una comodidad exclusiva del entorno de desarrollo.
+    """
+    settings=get_settings()
+    if not settings.dev_token_enabled:
+        raise HTTPException(404, "El endpoint de tokens de desarrollo está deshabilitado")
+    secret=settings.jwt_secret.get_secret_value()
+    if len(secret) < 32:
+        raise HTTPException(503, "JWT_SECRET debe tener al menos 32 caracteres")
+    user=await session.scalar(select(User).where(User.username==body.username, User.active.is_(True)))
+    if user is None:
+        raise HTTPException(404, "Usuario no encontrado o inactivo")
+    now=datetime.now(timezone.utc)
+    expires_at=now+timedelta(minutes=settings.jwt_expiration_minutes)
+    token=jwt.encode({"sub":user.username,"role":user.role,"iat":now,"exp":expires_at}, secret, algorithm=settings.jwt_algorithm)
+    await record_event(session,"DEV_TOKEN_ISSUED",{"username":user.username,"role":user.role},actor_id=user.id)
+    await session.commit()
+    return {"access_token":token,"token_type":"bearer","expires_in":settings.jwt_expiration_minutes*60,"username":user.username,"role":user.role}
 
 @router.post("/ops", status_code=202)
 async def submit_ops(body: OpsInput, session: AsyncSession=Depends(get_session), user: User=Depends(current_user)):
@@ -196,7 +224,7 @@ async def submit_ops(body: OpsInput, session: AsyncSession=Depends(get_session),
                 await record_event(session,"WRITE_DISABLED",{"step_id":step.id,"tool":item.tool_name},actor_id=user.id,trace_id=trace_id)
                 await session.commit(); raise HTTPException(403,"Las herramientas de escritura están deshabilitadas")
             approval=await create_approval(session,step,user.id); step.status="AWAITING_APPROVAL"; needs_approval=True
-            outcomes.append({"step":index,"status":"AWAITING_APPROVAL","approval_id":approval.id,"risk":risk})
+            outcomes.append({"step":index,"status":"AWAITING_APPROVAL","tool_name":item.tool_name,"approval_id":approval.id,"risk":risk})
         else:
             request.status="EXECUTING"
             if client is None: client=FineractClient(settings)
@@ -204,7 +232,7 @@ async def submit_ops(body: OpsInput, session: AsyncSession=Depends(get_session),
                 result=await dispatch(item.tool_name,args,client)
                 data=result.model_dump(mode="json",by_alias=True) if hasattr(result,"model_dump") else result
                 session.add(SandboxExecution(step_id=step.id,payload=args,response=data,mcp_tool_name=item.tool_name,langsmith_trace_id=trace_id))
-                step.status="COMPLETED"; outcomes.append({"step":index,"status":"COMPLETED","result":data})
+                step.status="COMPLETED"; outcomes.append({"step":index,"status":"COMPLETED","tool_name":item.tool_name,"result":data})
                 await record_event(session,"STEP_EXECUTED",{"request_id":request.id,"step_id":step.id,"tool":item.tool_name},actor_id=user.id,trace_id=trace_id)
             except Exception as exc:
                 step.status="FAILED"; request.status="FAILED"
@@ -217,12 +245,18 @@ async def submit_ops(body: OpsInput, session: AsyncSession=Depends(get_session),
     await record_event(session,"REQUEST_AWAITING_APPROVAL" if needs_approval else "REQUEST_COMPLETED",{"request_id":request.id},actor_id=user.id,trace_id=trace_id)
     await session.commit()
     audit_id = await session.scalar(select(AuditEvent.id).where(AuditEvent.event_data["request_id"].as_integer()==request.id).order_by(AuditEvent.id.desc()).limit(1))
-    return {"request_id":request.id,"status":request.status,"steps":outcomes,"auditId":audit_id}
+    return {"request_id":request.id,"status":request.status,"plan":spec.model_dump(),"trace_id":trace_id,"steps":outcomes,"auditId":audit_id}
 
 @router.get("/approvals")
 async def list_approvals(session: AsyncSession=Depends(get_session), user: User=Depends(current_user)):
-    rows=(await session.execute(select(ApprovalRequest,PlanStep).join(PlanStep).where(ApprovalRequest.status=="PENDING"))).all()
-    return [{"id":a.id,"tool_name":s.mcp_tool_name,"arguments":s.arguments,"payload_hash":a.payload_hash,"expires_at":a.expires_at.isoformat()} for a,s in rows]
+    rows=(await session.execute(
+        select(ApprovalRequest,PlanStep,OperationalPlan)
+        .select_from(ApprovalRequest)
+        .join(PlanStep, PlanStep.id==ApprovalRequest.step_id)
+        .join(OperationalPlan, OperationalPlan.id==PlanStep.plan_id)
+        .where(ApprovalRequest.status=="PENDING")
+    )).all()
+    return [{"id":a.id,"request_id":p.request_id,"step":s.step_order,"tool_name":s.mcp_tool_name,"arguments":s.arguments,"payload_hash":a.payload_hash,"expires_at":a.expires_at.isoformat()} for a,s,p in rows]
 
 async def execute_approved(session: AsyncSession, approval: ApprovalRequest, actor: User):
     step=await session.get(PlanStep,approval.step_id)
@@ -248,6 +282,12 @@ async def execute_approved(session: AsyncSession, approval: ApprovalRequest, act
         request.status="COMPLETED"
         request.result={"status":"COMPLETED","tool_name":step.mcp_tool_name,"result":data}
     await record_event(session,"SENSITIVE_STEP_EXECUTED",{"approval_id":approval.id,"step_id":step.id,"tool":step.mcp_tool_name},actor_id=actor.id)
+    return {
+        "request_id": request.id if request else None,
+        "status": "COMPLETED",
+        "plan": plan.plan if plan else None,
+        "steps": [{"step":step.step_order,"status":"COMPLETED","tool_name":step.mcp_tool_name,"result":data}],
+    }
 
 @router.post("/approvals/{approval_id}/decide")
 async def decide(approval_id:int, body:DecisionInput, session:AsyncSession=Depends(get_session), user:User=Depends(current_user)):
@@ -255,9 +295,10 @@ async def decide(approval_id:int, body:DecisionInput, session:AsyncSession=Depen
         await record_event(session,"APPROVAL_DECISION_FORBIDDEN",{"approval_id":approval_id,"role":user.role},actor_id=user.id)
         await session.commit()
         raise HTTPException(403,"Se requiere rol APPROVER")
+    execution=None
     try:
         approval=await decide_approval(session,approval_id,body.decision,user.id)
-        if body.decision=="APPROVED": await execute_approved(session,approval,user)
+        if body.decision=="APPROVED": execution=await execute_approved(session,approval,user)
     except LookupError as exc: raise HTTPException(404,str(exc))
     except TimeoutError as exc: await session.commit(); raise HTTPException(410,str(exc))
     except ValueError as exc:
@@ -265,9 +306,13 @@ async def decide(approval_id:int, body:DecisionInput, session:AsyncSession=Depen
         await session.commit()
         raise HTTPException(409,str(exc))
     await session.commit()
-    return {"approval_id":approval.id,"status":approval.status}
+    return {"approval_id":approval.id,"status":approval.status,"execution":execution}
 
 @router.get("/ops")
 async def request_history(session:AsyncSession=Depends(get_session),user:User=Depends(current_user)):
     rows=(await session.scalars(select(AgentRequest).order_by(AgentRequest.created_at.desc()).limit(100))).all()
-    return [{"id":r.id,"instruction":r.instruction,"status":r.status,"result":r.result,"created_at":r.created_at.isoformat()} for r in rows]
+    plans={}
+    if rows:
+        stored=(await session.scalars(select(OperationalPlan).where(OperationalPlan.request_id.in_([r.id for r in rows])))).all()
+        plans={plan.request_id:plan.plan for plan in stored}
+    return [{"id":r.id,"instruction":r.instruction,"status":r.status,"plan":plans.get(r.id),"result":r.result,"created_at":r.created_at.isoformat()} for r in rows]

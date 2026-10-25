@@ -84,6 +84,16 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Endpoint de conveniencia para desarrollo (deshabilitado por defecto) ---
+    dev_token_enabled: bool = Field(
+        default=False,
+        description=(
+            "Habilita POST /api/v1/dev/token, que emite un JWT para un usuario "
+            "activo sin autenticación. Solo para el entorno local de desarrollo; "
+            "nunca debe habilitarse en un entorno compartido o productivo."
+        ),
+    )
+
     # --- Servidor MCP (deshabilitado por defecto) ---
     mcp_enabled: bool = Field(
         default=False,
@@ -138,6 +148,7 @@ class Settings(BaseSettings):
             "policy_approval_threshold_amount": str(self.policy_approval_threshold_amount),
             "mcp_enabled": self.mcp_enabled,
             "mcp_dev_token_set": bool(self.mcp_dev_token.get_secret_value()),
+            "dev_token_enabled": self.dev_token_enabled,
             "api_docs_enabled": self.api_docs_enabled,
             "database_url": self.database_url,
             "auth_disabled": self.auth_disabled,

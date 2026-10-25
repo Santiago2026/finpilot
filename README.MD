@@ -25,6 +25,8 @@ para evaluar el *tool calling* de un modelo (Fase 1).
     - `GET /approvals` — aprobaciones pendientes.
     - `POST /approvals/{id}/decide` — `APPROVED` o `REJECTED`; requiere rol
       `APPROVER` o `ADMIN`.
+    - `POST /dev/token` — emite un JWT para un usuario activo; solo se expone con
+      `DEV_TOKEN_ENABLED=true` y está pensado para el botón del dashboard local.
   - **Servidor MCP** montado en `/mcp` (transporte *streamable HTTP*),
     deshabilitado por defecto (`MCP_ENABLED=true` lo habilita). Publica doce
     herramientas de **solo lectura**:
@@ -78,9 +80,15 @@ para evaluar el *tool calling* de un modelo (Fase 1).
     errores de Fineract saneados (sin cuerpos ni credenciales), verificación TLS
     activa, guarda de desarrollo `X-MCP-Token`, documentación interactiva
     deshabilitada por defecto y escucha en loopback.
-- **Dashboard Streamlit** (`finpilot/backend/dashboard`): consola para enviar
-  operaciones (con token Bearer), aprobar o rechazar solicitudes pendientes y ver
-  el historial.
+- **Dashboard Streamlit** (`finpilot/backend/dashboard`): consola con pestañas
+  para **operar**, **aprobar/rechazar** y consultar el **historial**. Traduce los
+  resultados a lenguaje natural (por ejemplo, el saldo de una cuenta) y muestra
+  tablas para los listados; el **plan y el JSON completo** quedan disponibles en
+  un desplegable para inspección. Al aprobar o rechazar, el resultado queda
+  visible en un resumen persistente y en la pestaña **Operar** (también en el
+  **Historial**), de modo que la operación no se pierde. Incluye botones para
+  generar el JWT según el perfil (`operator`, `approver`, `admin`) usando
+  `POST /dev/token`, además de la opción de pegar un token manualmente.
 - **Seed idempotente** (`finpilot/backend/scripts/seed.py`): crea/recupera el
   producto de ahorro `FPS1`, dos clientes y dos cuentas activas con saldo mínimo
   de 1000 USD. Los IDs quedan documentados en
@@ -89,7 +97,7 @@ para evaluar el *tool calling* de un modelo (Fase 1).
   emite JWT para `admin`, `approver` u `operator`.
 - **Harness de evaluación de *tool calling*** (`finpilot/backend/scripts/eval_tool_calling.py`,
   Fase 1), con `--self-test`, 39 casos y backends `ollama`/`hf`.
-- **Pruebas**: **240 passed** (pytest con la configuración por defecto).
+- **Pruebas**: **244 passed** (pytest con la configuración por defecto).
 
 ### Limitaciones conocidas
 
@@ -97,12 +105,13 @@ para evaluar el *tool calling* de un modelo (Fase 1).
   descubre las herramientas con `ClientSession.list_tools` y crea tools de
   LangChain que no ejecutan callbacks.
 - La suite de pruebas asume la configuración por defecto. Si
-  `finpilot/backend/.env` habilita `MCP_ENABLED`, `WRITES_ENABLED` o
-  `API_DOCS_ENABLED`, algunas pruebas de protocolo fallan porque esperan los
-  valores por defecto; ejecuta `pytest` con esas tres variables forzadas a
-  `false` (o sin `.env`).
-- El sandbox de Fineract y el dashboard son solo para desarrollo; el dashboard no
-  gestiona sesiones ni roles.
+  `finpilot/backend/.env` habilita `MCP_ENABLED`, `WRITES_ENABLED`,
+  `API_DOCS_ENABLED` o `DEV_TOKEN_ENABLED`, algunas pruebas de protocolo fallan
+  porque esperan los valores por defecto; ejecuta `pytest` con esas cuatro
+  variables forzadas a `false` (o sin `.env`).
+- El sandbox de Fineract y el dashboard son solo para desarrollo. El dashboard
+  guarda el token en la sesión del navegador y no implementa SSO ni control de
+  acceso propio; el endpoint de tokens solo debe habilitarse en local.
 
 ### Verificación reciente (2026-10-25)
 
@@ -117,8 +126,10 @@ para evaluar el *tool calling* de un modelo (Fase 1).
   `POST /api/v1/approvals/{id}/decide` con `APPROVED` → `COMPLETED`.
 - Instrucción libre («¿Cuánto dinero hay en la cuenta de ahorro 1?») planificada
   con Ollama (`qwen2.5:1.5b`) y ejecutada contra Fineract.
+- `POST /api/v1/dev/token` con `DEV_TOKEN_ENABLED=true` → JWT con `sub` y `role`;
+  el dashboard traduce el resultado y conserva el plan/JSON bajo demanda.
 - `scripts/eval_tool_calling.py --self-test` → `self-test OK` (39 casos).
-- `pytest` → `240 passed`.
+- `pytest` → `244 passed`.
 
 ## Flujo de una operación
 
@@ -229,12 +240,18 @@ FINPILOT_API_URL=http://127.0.0.1:8000/api/v1 \
   ../../.venv/bin/streamlit run dashboard/app.py --server.port 8501
 ```
 
-Abre <http://127.0.0.1:8501>. Genera el token con:
+Abre <http://127.0.0.1:8501>. En la barra lateral elige el perfil
+(**Consultar**, **Aprobar** o **Administrar**) y pulsa **Generar token**: el
+dashboard llama a `POST /api/v1/dev/token`, que requiere `DEV_TOKEN_ENABLED=true`
+en `finpilot/backend/.env`. También puedes pegar un token existente o generarlo
+desde la terminal:
 
 ```bash
 ../../.venv/bin/python scripts/issue_token.py operator   # o approver / admin
 ```
 
+> `DEV_TOKEN_ENABLED=true` permite emitir un JWT sin autenticación. Es una
+> comodidad exclusiva del entorno local; no lo actives en un entorno compartido.
 > Con `AUTH_DISABLED=true` no se necesita token: la API usa el usuario local
 > `local-operator` con rol `ADMIN`.
 
@@ -299,12 +316,13 @@ cd finpilot/backend
 ../../.venv/bin/python -m pytest -q
 ```
 
-Referencia actual: **240 passed** (2026-10-25). Si tu `.env` local habilita
-`MCP_ENABLED`, `WRITES_ENABLED` o `API_DOCS_ENABLED`, las pruebas de protocolo
-que esperan los valores por defecto fallarán; ejecútalas así:
+Referencia actual: **244 passed** (2026-10-25). Si tu `.env` local habilita
+`MCP_ENABLED`, `WRITES_ENABLED`, `API_DOCS_ENABLED` o `DEV_TOKEN_ENABLED`, las
+pruebas de protocolo que esperan los valores por defecto fallarán; ejecútalas
+así:
 
 ```bash
-MCP_ENABLED=false WRITES_ENABLED=false API_DOCS_ENABLED=false \
+MCP_ENABLED=false WRITES_ENABLED=false API_DOCS_ENABLED=false DEV_TOKEN_ENABLED=false \
   ../../.venv/bin/python -m pytest -q
 ```
 
@@ -356,6 +374,7 @@ Plantillas: [`finpilot/backend/.env.example`](finpilot/backend/.env.example)
 | `WATSONX_API_KEY` / `WATSONX_URL` / `WATSONX_PROJECT_ID` / `WATSONX_MODEL_ID` | (vacío) / `https://us-south.ml.cloud.ibm.com` / (vacío) / `ibm/granite-3-8b-instruct` | Alternativa IBM Watsonx. |
 | `LANGCHAIN_TRACING_V2` / `LANGCHAIN_API_KEY` / `LANGCHAIN_PROJECT` | `false` / (vacío) / `finpilot` | Trazas opcionales con LangSmith. |
 | `API_DOCS_ENABLED` | `false` | Expone `/docs`, `/redoc` y `/openapi.json`. |
+| `DEV_TOKEN_ENABLED` | `false` | Expone `POST /api/v1/dev/token` (JWT sin autenticación). Solo desarrollo local. |
 | `LOG_LEVEL` | `INFO` | Nivel de logging. |
 | `FINPILOT_API_URL` | `http://127.0.0.1:8000/api/v1` | URL que usa el dashboard (Compose: `http://backend:8000/api/v1`). |
 | `FINPILOT_DASHBOARD_PORT` | `8502` | Puerto del host para el dashboard en Compose. |
@@ -379,6 +398,8 @@ Plantillas: [`finpilot/backend/.env.example`](finpilot/backend/.env.example)
 - El servidor debe escucharse solo en `127.0.0.1`.
 - Las escrituras están deshabilitadas por defecto y siempre requieren aprobación
   HITL con hash de payload y TTL.
+- `DEV_TOKEN_ENABLED=true` emite JWT sin autenticación: úsalo solo en localhost y
+  nunca lo dejes activo en un entorno compartido o accesible por red.
 - La auditoría es append-only (triggers de UPDATE/DELETE).
 - Uso exclusivo con datos simulados / de sandbox.
 

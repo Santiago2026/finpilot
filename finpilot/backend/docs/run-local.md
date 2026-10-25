@@ -31,3 +31,20 @@ python -m app.main
   habilitan, `/docs`, `/redoc` y `/openapi.json`.
 - La documentación interactiva está **deshabilitada por defecto**. Para
   habilitarla solo en local, define `API_DOCS_ENABLED=true`.
+
+## Token de desarrollo para el dashboard
+
+El botón **Generar token** del dashboard usa `POST /api/v1/dev/token`, que solo
+se expone si `DEV_TOKEN_ENABLED=true`:
+
+```bash
+DEV_TOKEN_ENABLED=true uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Ese endpoint emite un JWT para un usuario activo (`operator`, `approver` o
+`admin`) sin autenticación previa. Es una comodidad exclusiva del entorno local:
+no lo habilites en una red compartida. La alternativa sin habilitarlo es:
+
+```bash
+python scripts/issue_token.py approver
+```
