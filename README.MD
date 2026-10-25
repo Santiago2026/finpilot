@@ -2,8 +2,11 @@
 
 FinPilot es un agente de operaciones financieras que funciona sobre un entorno
 **simulado** de [Apache Fineract](https://github.com/apache/fineract). El backend
-expone un servidor [MCP](https://modelcontextprotocol.io) (solo lectura) con
-herramientas para consultar clientes, cuentas y préstamos, además de un harness
+expone una API REST con JWT, un servidor [MCP](https://modelcontextprotocol.io)
+(herramientas de lectura y de escritura protegidas por aprobación HITL) y un
+planificador basado en [LangChain](https://python.langchain.com) que convierte
+instrucciones en lenguaje natural en planes de herramientas. Incluye además un
+dashboard [Streamlit](https://streamlit.io) para operar y aprobar, y un harness
 para evaluar el *tool calling* de un modelo (Fase 1).
 
 > Entorno de desarrollo y pruebas. No usar con datos reales ni en producción.
@@ -14,9 +17,17 @@ para evaluar el *tool calling* de un modelo (Fase 1).
 
 - **Backend FastAPI** (`finpilot/backend`):
   - `GET /health` → `{"status":"ok"}`.
+  - **API REST** (`/api/v1`, autenticación JWT y roles):
+    - `POST /ops` (`202`) — recibe `instruction` (1–4000 caracteres) y,
+      opcionalmente, un `plan` estructurado. Genera/valida el plan, evalúa el
+      riesgo, ejecuta las lecturas y deja las escrituras en espera de aprobación.
+    - `GET /ops` — historial de solicitudes (últimas 100).
+    - `GET /approvals` — aprobaciones pendientes.
+    - `POST /approvals/{id}/decide` — `APPROVED` o `REJECTED`; requiere rol
+      `APPROVER` o `ADMIN`.
   - **Servidor MCP** montado en `/mcp` (transporte *streamable HTTP*),
-    deshabilitado por defecto. Al habilitarlo (`MCP_ENABLED=true`) publica
-    doce herramientas de **solo lectura**:
+    deshabilitado por defecto (`MCP_ENABLED=true` lo habilita). Publica doce
+    herramientas de **solo lectura**:
     - `search_clients(displayName?, limit?)` — busca clientes por nombre
       (coincidencia parcial).
     - `get_client(clientId)` — obtiene un cliente por su identificador.
@@ -39,60 +50,150 @@ para evaluar el *tool calling* de un modelo (Fase 1).
       transacción concreta de una cuenta de ahorro.
     - `get_loan_transaction(loanId, transactionId)` — obtiene una transacción
       concreta de un préstamo.
-  - Argumentos validados de forma estricta (`extra="forbid"`) antes de tocar
-    Fineract; los fallos de Fineract se devuelven como mensajes saneados (sin
-    cuerpos, credenciales ni datos personales).
-  - Guarda de desarrollo opcional mediante la cabecera `X-MCP-Token`
-    (`MCP_DEV_TOKEN`); **no** es un mecanismo de autorización.
-  - Cliente HTTP de Fineract con **verificación TLS activa**
-    (`FINERACT_VERIFY_TLS=true`).
-  - Documentación interactiva (`/docs`, `/redoc`, `/openapi.json`) deshabilitada
-    por defecto (`API_DOCS_ENABLED=false`).
-- **Pruebas**: 216 pruebas (`pytest`) que cubren esquemas, registro/allowlist,
-  cliente Fineract (mockeado con `respx`) y el protocolo MCP de extremo a
-  extremo.
-- **Harness de evaluación de *tool calling*** (`scripts/eval_tool_calling.py`,
-  Fase 1), con modo `--self-test` que no contacta ningún backend.
 
-### Pendiente / no implementado
+    Con `WRITES_ENABLED=true` añade dos herramientas de **escritura** que solo se
+    ejecutan tras una aprobación HITL registrada (reciben `approvalId` y
+    `payloadHash`): `transfer_funds(fromAccountId, toAccountId, transactionDate,
+    amount, currency?, description?)` y `update_fraud_status(transactionId,
+    status, reason)`.
+  - **Planificador LangChain**: `MODEL_PROVIDER` = `huggingface`, `ollama` o
+    `watsonx`. El modelo solo **propone** un plan de *tool calls*; la API lo
+    valida, clasifica el riesgo y exige aprobación para las escrituras. Para
+    demos sin modelo se puede enviar un `plan` estructurado en `POST /ops`.
+  - **Políticas y riesgo**: las lecturas se clasifican `LOW` y las escrituras
+    `HIGH_SENSITIVE` (siempre requieren aprobación). Límites:
+    `POLICY_MAX_TRANSACTION_AMOUNT` (1000.00) y
+    `POLICY_APPROVAL_THRESHOLD_AMOUNT` (100.00).
+  - **Aprobaciones HITL**: TTL (`APPROVAL_TTL_SECONDS`, 900 s por defecto), hash
+    SHA-256 del payload, estados `PENDING`/`APPROVED`/`REJECTED`/`EXPIRED` y
+    decisión restringida por rol.
+  - **Auditoría append-only**: tabla `audit_events` con triggers de UPDATE/DELETE
+    (SQLite/PostgreSQL) y eventos como `REQUEST_RECEIVED`, `RISK_EVALUATED`,
+    `APPROVAL_CREATED`, `APPROVAL_APPROVED`/`APPROVAL_REJECTED`/`APPROVAL_EXPIRED`,
+    `STEP_EXECUTED` y `SENSITIVE_STEP_EXECUTED`.
+  - **Persistencia**: SQLAlchemy 2 async y migraciones Alembic
+    (`0001_initial` → `0002_audit_triggers`). SQLite local (`DATABASE_URL`) o
+    PostgreSQL en Docker.
+  - **Seguridad**: argumentos validados de forma estricta (`extra="forbid"`),
+    errores de Fineract saneados (sin cuerpos ni credenciales), verificación TLS
+    activa, guarda de desarrollo `X-MCP-Token`, documentación interactiva
+    deshabilitada por defecto y escucha en loopback.
+- **Dashboard Streamlit** (`finpilot/backend/dashboard`): consola para enviar
+  operaciones (con token Bearer), aprobar o rechazar solicitudes pendientes y ver
+  el historial.
+- **Seed idempotente** (`finpilot/backend/scripts/seed.py`): crea/recupera el
+  producto de ahorro `FPS1`, dos clientes y dos cuentas activas con saldo mínimo
+  de 1000 USD. Los IDs quedan documentados en
+  `finpilot/backend/docs/sandbox-ids.md`.
+- **Tokens de desarrollo** (`finpilot/backend/scripts/issue_token.py <usuario>`):
+  emite JWT para `admin`, `approver` u `operator`.
+- **Harness de evaluación de *tool calling*** (`finpilot/backend/scripts/eval_tool_calling.py`,
+  Fase 1), con `--self-test`, 39 casos y backends `ollama`/`hf`.
+- **Pruebas**: **240 passed** (pytest con la configuración por defecto).
 
-- Integración del modelo (LLM) en la aplicación.
-- Operaciones de **escritura** y flujo de aprobaciones humanas (existen variables
-  de configuración, pero la lógica aún no está implementada).
-- Paquetes aún **placeholder** (solo `__init__.py`): `app/agent`, `app/api`,
-  `app/approvals`, `app/audit`, `app/db`, `app/policies`, `app/schemas`.
+### Limitaciones conocidas
+
+- `langchain-mcp-adapters` no es importable con `mcp==2.3.0`; el planificador
+  descubre las herramientas con `ClientSession.list_tools` y crea tools de
+  LangChain que no ejecutan callbacks.
+- La suite de pruebas asume la configuración por defecto. Si
+  `finpilot/backend/.env` habilita `MCP_ENABLED`, `WRITES_ENABLED` o
+  `API_DOCS_ENABLED`, algunas pruebas de protocolo fallan porque esperan los
+  valores por defecto; ejecuta `pytest` con esas tres variables forzadas a
+  `false` (o sin `.env`).
+- El sandbox de Fineract y el dashboard son solo para desarrollo; el dashboard no
+  gestiona sesiones ni roles.
+
+### Verificación reciente (2026-10-25)
+
+- Fineract responde `{"status":"UP"}` en
+  `https://localhost:8443/fineract-provider/actuator/health`.
+- Migraciones aplicadas hasta `0002_audit_triggers (head)`; `scripts/seed.py`
+  terminó sin duplicar recursos.
+- `GET /health` → `{"status":"ok"}`; `/docs` y `/openapi.json` disponibles con
+  `API_DOCS_ENABLED=true`; `POST /mcp` y `POST /mcp/` responden.
+- `POST /api/v1/ops` sin token → `401`; con plan de lectura → `202` y
+  `COMPLETED`; con una transferencia → `AWAITING_APPROVAL`, y tras
+  `POST /api/v1/approvals/{id}/decide` con `APPROVED` → `COMPLETED`.
+- Instrucción libre («¿Cuánto dinero hay en la cuenta de ahorro 1?») planificada
+  con Ollama (`qwen2.5:1.5b`) y ejecutada contra Fineract.
+- `scripts/eval_tool_calling.py --self-test` → `self-test OK` (39 casos).
+- `pytest` → `240 passed`.
+
+## Flujo de una operación
+
+1. `POST /api/v1/ops` con una instrucción libre o un `plan` estructurado.
+2. El planificador (LLM) propone pasos `{tool_name, arguments, justification}`.
+3. Cada paso se valida contra el allowlist y los esquemas estrictos.
+4. Se clasifica el riesgo (`LOW` lectura / `HIGH_SENSITIVE` escritura).
+5. Las lecturas se ejecutan de inmediato vía el registro/MCP y se auditan.
+6. Las escrituras crean una aprobación (`AWAITING_APPROVAL`, con TTL y hash).
+7. Un usuario con rol `APPROVER`/`ADMIN` decide; si se aprueba, la API invoca la
+   tool MCP con `approvalId` y `payloadHash` y verifica que el payload no cambió.
+8. Todo queda registrado en `audit_events` y en el historial de `GET /ops`.
 
 ## Estructura del repositorio
 
 ```
 Proyecto-IA/
-├── README.MD                  # este documento
-├── .gitignore
-├── finpilot/backend/          # backend de FinPilot (aplicación)
-│   ├── app/
-│   │   ├── core/              # configuración y logging
-│   │   ├── integrations/fineract/   # cliente HTTP de Fineract
-│   │   ├── mcp/               # servidor MCP (solo lectura)
-│   │   ├── tools/             # allowlist, validación y despacho de herramientas
-│   │   └── agent|api|approvals|audit|db|policies|schemas/  # placeholders
-│   ├── docs/                  # documentación del backend
-│   ├── scripts/               # harness de evaluación de tool calling
-│   ├── test/                  # pruebas
-│   ├── requirements.txt, requirements-dev.txt, pytest.ini
-│   └── .env.example
-├── docs/                      # documentación a nivel de proyecto (por ahora vacío)
-├── dashboard/                 # (pendiente)
-└── fineract/                  # clon de Apache Fineract (infra local; NO versionado)
+├── README.MD
+├── .env.example                    # plantilla raíz (interpolación de Compose)
+├── docker-compose.yml              # backend + dashboard (Fineract es externo)
+├── docs/                           # SAD en PDF y modelos de diseño (.vpp)
+├── finpilot/
+│   └── backend/
+│       ├── app/
+│       │   ├── agent/              # planificador LangChain
+│       │   ├── api/                # rutas REST /api/v1
+│       │   ├── approvals/          # creación y decisión HITL
+│       │   ├── audit/              # registro append-only
+│       │   ├── core/               # configuración y logging
+│       │   ├── db/                 # modelos y sesión SQLAlchemy
+│       │   ├── integrations/fineract/  # cliente HTTP de Fineract
+│       │   ├── mcp/                # servidor MCP
+│       │   ├── policies/           # validación y clasificación de riesgo
+│       │   ├── schemas/            # reservado (sin uso todavía)
+│       │   └── tools/              # allowlist, schemas y despacho
+│       ├── dashboard/              # consola Streamlit + Dockerfile
+│       ├── docs/                   # documentación del backend
+│       ├── migrations/versions/    # migraciones Alembic
+│       ├── scripts/                # seed, tokens y harness de evaluación
+│       ├── test/                   # pruebas pytest
+│       ├── Dockerfile
+│       ├── requirements.txt / requirements-dev.txt
+│       ├── pytest.ini / alembic.ini
+│       └── .env.example            # plantilla de variables del backend
+└── fineract/                       # clon local de Apache Fineract (no versionado)
 ```
+
+> `docs/` a nivel de proyecto contiene el SAD y los modelos de diseño; la
+> documentación operativa vive en `finpilot/backend/docs/`.
 
 ## Cómo ejecutar
 
 ### Requisitos
 
 - Python 3.12 y el entorno virtual `.venv` en la raíz del proyecto.
-- Docker (para el sandbox de Fineract; ver más abajo).
+- Docker y Docker Compose v2.
+- (Opcional) [Ollama](https://ollama.com) o credenciales de Hugging Face/Watsonx
+  para que el planificador genere planes a partir de texto libre.
 
-### Backend en local
+### 1. Sandbox de Apache Fineract
+
+Fineract no forma parte del Compose raíz: es una dependencia externa. Los pasos
+completos están en la sección
+[Configuración del entorno financiero](#configuración-del-entorno-financiero-apache-fineract).
+Resumen, desde el clon local `fineract/`:
+
+```bash
+docker compose -f docker-compose-postgresql.yml up -d
+curl -k https://localhost:8443/fineract-provider/actuator/health
+```
+
+La base PostgreSQL del sandbox queda publicada en el puerto **5435** del host y
+Fineract en el **8443**.
+
+### 2. Backend en local
 
 ```bash
 cd finpilot/backend
@@ -101,7 +202,11 @@ cd finpilot/backend
 ../../.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 
 # Configuración
-cp .env.example .env      # ajustar las credenciales del sandbox
+cp .env.example .env      # ajustar credenciales del sandbox y del modelo
+
+# Base de datos y datos sintéticos
+../../.venv/bin/python -m alembic upgrade head
+../../.venv/bin/python scripts/seed.py
 
 # Arranque
 ../../.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -116,13 +221,31 @@ cp .env.example .env      # ajustar las credenciales del sandbox
 Detalle y notas de seguridad en
 [`finpilot/backend/docs/run-local.md`](finpilot/backend/docs/run-local.md).
 
-### Cómo levantar con Docker
+### 3. Dashboard en local
+
+```bash
+cd finpilot/backend
+FINPILOT_API_URL=http://127.0.0.1:8000/api/v1 \
+  ../../.venv/bin/streamlit run dashboard/app.py --server.port 8501
+```
+
+Abre <http://127.0.0.1:8501>. Genera el token con:
+
+```bash
+../../.venv/bin/python scripts/issue_token.py operator   # o approver / admin
+```
+
+> Con `AUTH_DISABLED=true` no se necesita token: la API usa el usuario local
+> `local-operator` con rol `ADMIN`.
+
+### 4. Cómo levantar con Docker
 
 El Compose raíz ejecuta el backend y el Dashboard. Fineract queda fuera de este
 Compose y debe estar levantado previamente, unido a la red Docker externa
 `fineract_default` (por ejemplo, con
 `docker compose -f fineract/docker-compose-postgresql.yml up -d`). En esa red,
-el backend usa `https://fineract-fineract-1:8443/fineract-provider` por defecto.
+configura `FINERACT_BASE_URL=https://fineract-fineract-1:8443/fineract-provider`
+en `finpilot/backend/.env`.
 Compose no puede declarar `depends_on: fineract` porque Fineract no es un
 servicio de este proyecto; la dependencia externa se resuelve mediante la red y
 la URL. El contenedor de Fineract publica 8443 y se resuelve por el nombre de
@@ -130,24 +253,31 @@ servicio/contenedor `fineract-fineract-1` en `fineract_default`.
 
 ```bash
 cp .env.example .env
-# Edita .env: sustituye los valores de ejemplo por las credenciales del sandbox
-# y genera un JWT_SECRET aleatorio de al menos 32 caracteres.
+cp finpilot/backend/.env.example finpilot/backend/.env
+# Edita ambos archivos: credenciales del sandbox, un JWT_SECRET aleatorio de al
+# menos 32 caracteres y el proveedor del modelo.
+#
+# El servicio backend toma su configuración de finpilot/backend/.env; el .env
+# raíz solo se usa para interpolar FINERACT_CA_BUNDLE y FINPILOT_DASHBOARD_PORT.
+# Para Compose, en finpilot/backend/.env define además:
+#   FINERACT_BASE_URL=https://fineract-fineract-1:8443/fineract-provider
+#   DATABASE_URL=sqlite+aiosqlite:////data/finpilot.db
 docker compose config -q
 docker compose up --build -d
-docker compose exec backend alembic upgrade head
+docker compose exec backend python -m alembic upgrade head
 docker compose exec backend python scripts/seed.py
 docker compose ps
 curl http://127.0.0.1:8000/health
 curl -k https://localhost:8443/fineract-provider/actuator/health
 ```
 
-Después de `docker compose up -d --build`, el comando
 `docker compose exec backend python scripts/seed.py` es el seed reproducible
 único para usuarios FinPilot y sandbox Fineract: crea/recupera producto, dos
 clientes y cuentas activas, y completa el saldo mínimo de 1000. Repetirlo no
 duplica recursos ni depósitos. Requiere `FINERACT_BASE_URL`, `FINERACT_USERNAME`,
-`FINERACT_PASSWORD` y `FINERACT_TENANT_ID` en `.env`. El Compose raíz no contiene
-Fineract; este debe estar healthy y conectado a la red externa `fineract_default`.
+`FINERACT_PASSWORD` y `FINERACT_TENANT_ID` en
+`finpilot/backend/.env`. El Compose raíz no contiene Fineract; este debe estar
+healthy y conectado a la red externa `fineract_default`.
 
 El Dashboard queda en <http://localhost:8502> por defecto y el backend en
 <http://localhost:8000>. La base SQLite persiste en el volumen Docker
@@ -162,31 +292,38 @@ secretos en el repositorio. Para detener los servicios sin borrar la base:
 `docker compose down` (no añadir `-v`). Si el puerto 8501 está libre, puedes
 establecer `FINPILOT_DASHBOARD_PORT=8501` en `.env`.
 
-### Pruebas
+### 5. Pruebas
 
 ```bash
 cd finpilot/backend
 ../../.venv/bin/python -m pytest -q
 ```
 
-Referencia actual: **235 passed** (verificación del flujo HITL y seed, 2026-10-22).
+Referencia actual: **240 passed** (2026-10-25). Si tu `.env` local habilita
+`MCP_ENABLED`, `WRITES_ENABLED` o `API_DOCS_ENABLED`, las pruebas de protocolo
+que esperan los valores por defecto fallarán; ejecútalas así:
 
-### Harness de evaluación (Fase 1)
+```bash
+MCP_ENABLED=false WRITES_ENABLED=false API_DOCS_ENABLED=false \
+  ../../.venv/bin/python -m pytest -q
+```
+
+### 6. Harness de evaluación (Fase 1)
 
 ```bash
 cd finpilot/backend
 ../../.venv/bin/python scripts/eval_tool_calling.py --self-test   # no contacta backends
 ```
 
-Las ejecuciones reales (`--backend ollama|hf`) contactan un backend de
-inferencia; ver
+Las ejecuciones reales (`--backend ollama|hf`, `--mode native|json`) contactan un
+backend de inferencia; ver
 [`finpilot/backend/docs/model-eval.md`](finpilot/backend/docs/model-eval.md).
 
 ## Variables de entorno
 
 La configuración se carga desde variables de entorno y/o `finpilot/backend/.env`.
-Plantilla completa en
-[`finpilot/backend/.env.example`](finpilot/backend/.env.example). Principales:
+Plantillas: [`finpilot/backend/.env.example`](finpilot/backend/.env.example)
+(backend) y [`.env.example`](.env.example) (raíz, para Compose). Principales:
 
 | Variable | Por defecto | Descripción |
 |---|---|---|
@@ -195,18 +332,42 @@ Plantilla completa en
 | `FINERACT_USERNAME` / `FINERACT_PASSWORD` | (vacío) | Credenciales de servicio (definir solo en `.env`). |
 | `FINERACT_TIMEOUT_SECONDS` | `10` | Tiempo máximo por petición a Fineract. |
 | `FINERACT_VERIFY_TLS` | `true` | Verificación TLS. No desactivar salvo certificado autofirmado local. |
+| `FINERACT_CA_BUNDLE` | — | Bundle CA montado por Compose (opcional). |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./finpilot.db` | Base de datos (SQLite local o PostgreSQL en Docker). |
+| `JWT_SECRET` | (vacío) | Secreto HS256; debe tener al menos 32 caracteres. |
+| `JWT_EXPIRATION_MINUTES` | `60` | Vigencia de los JWT emitidos. |
+| `AUTH_DISABLED` | `false` | Omite el JWT y usa el usuario local `local-operator` (ADMIN). Solo desarrollo. |
+| `WRITES_ENABLED` | `false` | Publica las tools de escritura (siempre con aprobación HITL). |
 | `MCP_ENABLED` | `false` | Monta el servidor MCP en `/mcp`. |
+| `MCP_URL` | `http://127.0.0.1:8000/mcp/` | Endpoint MCP que usa la API y el planificador. |
 | `MCP_DEV_TOKEN` | (vacío) | Guarda de desarrollo (`X-MCP-Token`); no es autorización. |
-| `APPROVAL_API_TOKEN` / `APPROVAL_TTL_SECONDS` | (vacío) / `900` | Aprobaciones (aún no implementado). |
-| `POLICY_MAX_TRANSACTION_AMOUNT` / `POLICY_APPROVAL_THRESHOLD_AMOUNT` | `1000.00` / `100.00` | Límites de operaciones. |
-| `API_DOCS_ENABLED` | `false` | Expone `/docs`, `/redoc`, `/openapi.json`. |
+| `APPROVAL_API_TOKEN` | (vacío) | Reservado para autorización de aprobaciones. |
+| `APPROVAL_TTL_SECONDS` | `900` | Vigencia de una solicitud de aprobación. |
+| `POLICY_MAX_TRANSACTION_AMOUNT` | `1000.00` | Monto máximo por operación. |
+| `POLICY_APPROVAL_THRESHOLD_AMOUNT` | `100.00` | Umbral de aprobación configurado. |
+| `MODEL_PROVIDER` | `huggingface` | `huggingface`, `ollama` o `watsonx`. |
+| `HF_TOKEN` | (vacío) | Token de Hugging Face (solo en `.env`). |
+| `HF_MODEL_ID` | `meta-llama/Llama-3.1-8B-Instruct` | Modelo de chat de Hugging Face. |
+| `HF_PROVIDER` | `auto` | Enrutado de Hugging Face Inference Providers. |
+| `HF_MAX_NEW_TOKENS` | `1024` | Tokens máximos de salida. |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Endpoint de Ollama. |
+| `OLLAMA_MODEL` | `qwen2.5:1.5b` | Modelo local de Ollama. |
+| `OLLAMA_NUM_CTX` / `OLLAMA_NUM_PREDICT` | `16384` / `1024` | Contexto y tokens de salida de Ollama. |
+| `WATSONX_API_KEY` / `WATSONX_URL` / `WATSONX_PROJECT_ID` / `WATSONX_MODEL_ID` | (vacío) / `https://us-south.ml.cloud.ibm.com` / (vacío) / `ibm/granite-3-8b-instruct` | Alternativa IBM Watsonx. |
+| `LANGCHAIN_TRACING_V2` / `LANGCHAIN_API_KEY` / `LANGCHAIN_PROJECT` | `false` / (vacío) / `finpilot` | Trazas opcionales con LangSmith. |
+| `API_DOCS_ENABLED` | `false` | Expone `/docs`, `/redoc` y `/openapi.json`. |
 | `LOG_LEVEL` | `INFO` | Nivel de logging. |
+| `FINPILOT_API_URL` | `http://127.0.0.1:8000/api/v1` | URL que usa el dashboard (Compose: `http://backend:8000/api/v1`). |
+| `FINPILOT_DASHBOARD_PORT` | `8502` | Puerto del host para el dashboard en Compose. |
 
 ## Documentación
 
 - Ejecución local segura del backend: `finpilot/backend/docs/run-local.md`.
+- Arquitectura y flujo HITL: `finpilot/backend/docs/architecture-hitl.md`.
 - TLS local FinPilot ↔ Fineract: `finpilot/backend/docs/tls-fineract-local-dev.md`.
 - Evaluación de *tool calling* (Fase 1): `finpilot/backend/docs/model-eval.md`.
+- IDs de datos sintéticos: `finpilot/backend/docs/sandbox-ids.md`.
+- Diseño del sistema: `docs/` (SAD en PDF y modelos `.vpp`).
 
 ## Seguridad
 
@@ -216,6 +377,9 @@ Plantilla completa en
   confiar en la CA de desarrollo mediante `SSL_CERT_FILE` (ver doc de TLS) en
   lugar de desactivar la verificación.
 - El servidor debe escucharse solo en `127.0.0.1`.
+- Las escrituras están deshabilitadas por defecto y siempre requieren aprobación
+  HITL con hash de payload y TTL.
+- La auditoría es append-only (triggers de UPDATE/DELETE).
 - Uso exclusivo con datos simulados / de sandbox.
 
 ---
